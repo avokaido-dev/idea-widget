@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Idea widget — script tag example</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0; padding: 40px;
+         max-width: 46rem; color: #14201a; background: #f6f7f4 }
+  h1 { font-size: 1.6rem; margin: 0 0 .4rem }
+  p { color: #4a544c }
+  code { font: 13px ui-monospace, monospace; background: #fff; padding: 2px 5px;
+         border-radius: 4px; border: 1px solid #dce1db }
+</style>
+</head>
+<body>
+  <h1>The one-line install</h1>
+  <p>
+    Exactly what a customer pastes: the built <code>dist/v1.js</code>, configured
+    entirely from <code>data-*</code> attributes, with no code of their own. The
+    origin the interview is framed from comes from this tag's own
+    <code>src</code>, so serving the widget from a preview channel frames the
+    preview.
+  </p>
+  <p>
+    This page also proves the other half of that entry point:
+    <code>window.avokaido.openIdeas()</code> exists, which is how a customer with
+    their own button opens the dock.
+  </p>
+
+  <!--
+    data-origin is set because this page loads the widget from a local server
+    that does not host the interview. Without it the widget would frame
+    http://127.0.0.1:8765/idea/… and 404 — which is the same trap as serving the
+    file from a third-party CDN, and exactly why the attribute exists. A real
+    embed loading the widget from the hosted URL needs neither.
+
+    data-position is deliberately nonsense, to show the corner fallback.
+  -->
+  <script src="../dist/v1.js"
+          data-key="avk_example-not-a-real-key"
+          data-origin="https://app-avokaido-eu.web.app"
+          data-label="Tell us what to change"
+          data-position="somewhere-else"
+          defer></script>
+</body>
+</html>

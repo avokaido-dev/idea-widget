@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Idea widget — example host page</title>
+<style>
+  body { font: 16px/1.6 system-ui, sans-serif; margin: 0; padding: 40px;
+         max-width: 46rem; color: #14201a; background: #f6f7f4 }
+  h1 { font-size: 1.6rem; margin: 0 0 .4rem }
+  p  { color: #4a544c }
+  #log { font: 13px/1.5 ui-monospace, monospace; background: #fff; color: #131a16;
+         border: 1px solid #dce1db; border-radius: 6px; padding: 12px;
+         min-height: 5rem; white-space: pre-wrap }
+  button { font: inherit; padding: .4rem .8rem; border-radius: 6px;
+           border: 1px solid #c6cec5; background: #fff; cursor: pointer }
+</style>
+</head>
+<body>
+  <h1>A page somebody wants changed</h1>
+  <p>
+    This is a stand-in for a customer's own product. The widget mounts its
+    launcher in the corner without touching anything here — no backdrop, and
+    this page stays readable and clickable while the conversation is open,
+    which is the whole advantage over sending somebody to a link.
+  </p>
+  <p>
+    <button id="open">Open from my own button</button>
+    <button id="close">Close</button>
+    <button id="destroy">Destroy</button>
+  </p>
+  <div id="log">waiting for widget events…</div>
+
+  <script type="module">
+    // Points at the local source rather than the built file, so editing
+    // src/widget.js and reloading is the whole development loop.
+    import { createIdeaWidget } from "../src/index.js";
+
+    const log = (line) => {
+      document.getElementById("log").textContent += "\n" + line;
+    };
+
+    const widget = createIdeaWidget({
+      // Deliberately not a real key: POST /session answers one identical 404
+      // for unknown, disabled and never-existed, so this exercises the whole
+      // mount / open / frame path and the page's own "not active" screen.
+      key: "avk_example-not-a-real-key",
+      origin: new URLSearchParams(location.search).get("origin") || undefined,
+      label: "Suggest a change",
+    });
+
+    for (const name of ["ready", "submitted", "closed"]) {
+      document.addEventListener("avokaido:" + name, (e) =>
+        log(`avokaido:${name} ${JSON.stringify(e.detail)}`),
+      );
+    }
+    document.getElementById("open").onclick = () => widget.open();
+    document.getElementById("close").onclick = () => widget.close();
+    document.getElementById("destroy").onclick = () => {
+      widget.destroy();
+      log("destroyed — launcher and listeners gone");
+    };
+    log("widget created; launcher should be bottom-right");
+  </script>
+</body>
+</html>
