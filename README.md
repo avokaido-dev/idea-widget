@@ -55,6 +55,17 @@ Both channels ship the same code. Pick the script tag if you want fixes
 automatically; pick the package if you want to control when they land. See
 [Versioning](#versioning).
 
+### Dart and Flutter web
+
+There is a Dart wrapper in [`dart/`](dart), published as
+[`avokaido_idea_widget`](https://pub.dev/packages/avokaido_idea_widget). It
+injects this script and bridges the events into a `Stream`, so there is still
+only one copy of the widget:
+
+```dart
+await AvokaidoIdeas.install(key: 'avk_YOUR_KEY');
+```
+
 ## Configuration
 
 Script tag attributes, and the equivalent options:
