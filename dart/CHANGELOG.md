@@ -1,6 +1,6 @@
 ## 1.0.0
 
-First release. Wraps the JavaScript embed (`@avokaido/idea-widget`) for Dart and
+First release. Wraps the JavaScript embed (`avokaido-idea-widget`) for Dart and
 Flutter web apps: injects the script tag, exposes `open` / `close` / `destroy`,
 and turns the widget's DOM events into a `Stream<IdeaEvent>`.
 

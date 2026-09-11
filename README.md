@@ -1,4 +1,4 @@
-# @avokaido/idea-widget
+# avokaido-idea-widget
 
 A suggestion box you can put in your product in one line. Your users describe
 what they want changed, a hosted interview turns it into a request your team
@@ -39,11 +39,11 @@ server-to-server ingest key.
 For anyone who bundles their frontend and would rather pin a version:
 
 ```sh
-npm install @avokaido/idea-widget
+npm install avokaido-idea-widget
 ```
 
 ```js
-import { createIdeaWidget } from "@avokaido/idea-widget";
+import { createIdeaWidget } from "avokaido-idea-widget";
 
 const widget = createIdeaWidget({ key: "avk_YOUR_KEY" });
 

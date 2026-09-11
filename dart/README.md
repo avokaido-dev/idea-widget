@@ -5,7 +5,7 @@ they want changed, a hosted interview turns it into a request your team can act
 on, and it lands in your Avokaido inbox.
 
 This package is a thin wrapper around the JavaScript embed
-([`@avokaido/idea-widget`](https://github.com/avokaido-dev/idea-widget), MIT):
+([`avokaido-idea-widget`](https://github.com/avokaido-dev/idea-widget), MIT):
 it injects the script tag, exposes `open` / `close` / `destroy`, and turns the
 widget's DOM events into a Dart `Stream`. It is a bridge, not a port — there is
 one copy of the launcher, the dock, the drag handling and the screenshot
