@@ -29,10 +29,68 @@ the widget is served from our CDN so a fix reaches your page without you
 redeploying anything.
 
 Get `avk_YOUR_KEY` from **Feature ideas → Embed the suggestion widget** in your
-Avokaido workspace. **The key is meant to be public** — it goes in your HTML,
-anyone can read it, and it authorises exactly one thing: starting an interview.
-It cannot post an idea directly, and it is a different key from the
-server-to-server ingest key.
+Avokaido workspace.
+
+### About the key
+
+**It is a public identifier, not a secret.** It goes in your HTML, so anyone who
+views source can read it — the same as a Firebase web API key, a Stripe
+publishable key or an Intercom `app_id`. Committing it is fine. Concealment is
+not available for anything that reaches a browser, so it is not what protects
+you.
+
+What protects you is how little the key can do:
+
+- It authorises exactly one thing: **starting an interview.** It cannot read your
+  inbox, read anyone else's conversation, or file an idea directly.
+- It is a **different key** from the server-to-server ingest key. That one can
+  write straight into your inbox and is a real secret; this one is refused there.
+- Every link has **daily limits** on interviews and messages, and opening
+  interviews is **rate-limited per IP**. This is what actually bounds somebody
+  who scrapes your key.
+- You can **restrict it to your own origins** — see below.
+
+## Restricting where it works
+
+In **Feature ideas → Embed the suggestion widget**, each link has a list of
+origins it may be embedded on:
+
+```
+https://app.example.com
+https://example.com
+```
+
+The browser reports the embedding page's origin, and your page's JavaScript
+cannot change what it reports. So this stops your snippet working if somebody
+copies it onto another site.
+
+**It is a deterrent, not a domain lock, and it matters that you know which.** The
+key is public, so a script that is not a browser sends whatever origin it likes
+and still reaches the form. What bounds that is the daily limits above, not this
+list. Restricting origins is worth doing — it removes the easy case — but do not
+plan around it being airtight.
+
+Leaving the list **empty keeps the link working from anywhere**, on a smaller
+daily allowance. That allowance is a separate budget from your configured
+origins' one, so un-attested traffic cannot exhaust the allowance your real embed
+depends on, and vice versa.
+
+### Configure it per environment, not because it is secret
+
+Hardcoding one key everywhere is worth avoiding for a duller reason than secrecy:
+you want **separate links for staging and production** — so a test suggestion
+does not look like a real one in your inbox — and you want to be able to replace
+a link without editing code.
+
+```sh
+# Flutter web
+flutter build web --dart-define=IDEA_WIDGET_KEY=avk_...
+```
+
+```js
+// npm, from your own build's environment
+createIdeaWidget({ key: process.env.IDEA_WIDGET_KEY });
+```
 
 ### Or install it
 

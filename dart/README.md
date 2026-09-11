@@ -22,9 +22,41 @@ await AvokaidoIdeas.install(key: 'avk_YOUR_KEY');
 That is the whole install: a floating launcher appears in the bottom-right.
 
 Get `avk_YOUR_KEY` from **Feature ideas → Embed the suggestion widget** in your
-Avokaido workspace. **The key is meant to be public** — it ships in your
-compiled app, anyone can read it, and it authorises exactly one thing: starting
-an interview. It cannot post an idea directly.
+Avokaido workspace.
+
+### About the key
+
+**It is a public identifier, not a secret.** It ships inside your compiled app,
+where anyone can read it out of `main.dart.js` — the same as a Firebase web API
+key. Committing it is fine, and hiding it is not possible, so it is not what
+protects you.
+
+What protects you is that the key authorises exactly one thing — **starting an
+interview** — plus per-link daily limits, per-IP rate limiting on opening
+interviews, and an optional list of origins the link may be embedded on. The
+browser reports the embedding origin and your Dart cannot change what it reports,
+so restricting origins stops your key working on somebody else's site. It is a
+deterrent rather than a domain lock: a script that is not a browser sends
+whatever origin it likes, which is what the daily limits are for. Configure the
+list in **Feature ideas → Embed the suggestion widget**; leaving it empty keeps
+the link working anywhere, on a smaller separate allowance.
+
+### Pass it in, per environment
+
+Not for secrecy — so that staging and production use **separate links**, and so a
+link can be replaced without editing code:
+
+```dart
+const _key = String.fromEnvironment('IDEA_WIDGET_KEY');
+
+if (kIsWeb && _key.isNotEmpty) {
+  await AvokaidoIdeas.install(key: _key);
+}
+```
+
+```sh
+flutter build web --dart-define=IDEA_WIDGET_KEY=avk_...
+```
 
 ### From your own button
 
