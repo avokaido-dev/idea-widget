@@ -243,10 +243,14 @@ function createIdeaWidget(options) {
     frame.src = frameUrl;
     frame.title = label;
     frame.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-    // Deliberately NOT sandboxed. The page needs its own origin's storage to
-    // hold a session at all, and a sandbox without allow-same-origin is exactly
-    // the condition that breaks it — which would turn an uncommon browser
-    // setting into a guaranteed failure for everybody.
+    // Deliberately NOT sandboxed. A sandbox without `allow-same-origin` gives
+    // the page an opaque origin, which costs it storage AND the ability to talk
+    // to its own API — a guaranteed failure rather than a degraded one.
+    //
+    // Note the page does not DEPEND on storage even unsandboxed: it is a
+    // third-party frame here, so a browser may refuse storage anyway, and the
+    // interview is built to run without it. This attribute is about not making
+    // things worse.
     // DISPLAY-CAPTURE IS THE ONE THAT MATTERS, and it is not the default.
     // Permissions Policy hands `display-capture` to `self` only, so the framed
     // page's screenshot button rejects instantly — with the same error a person
