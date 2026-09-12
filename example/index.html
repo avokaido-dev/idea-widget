@@ -41,10 +41,12 @@
     };
 
     const widget = createIdeaWidget({
-      // Deliberately not a real key: POST /session answers one identical 404
-      // for unknown, disabled and never-existed, so this exercises the whole
-      // mount / open / frame path and the page's own "not active" screen.
-      key: "avk_example-not-a-real-key",
+      // Pass ?key=avk_... to hold a real interview. Without one this is
+      // deliberately not a real key: POST /session answers one identical 404
+      // for unknown, disabled and never-existed, so it still exercises the
+      // whole mount / open / frame path and the page's "not active" screen.
+      key: new URLSearchParams(location.search).get("key")
+        || "avk_example-not-a-real-key",
       origin: new URLSearchParams(location.search).get("origin") || undefined,
       label: "Suggest a change",
     });

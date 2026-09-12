@@ -254,8 +254,16 @@ chose to share.
 No dependencies, and no build step beyond concatenation.
 
 ```sh
-npm test        # builds dist/v1.js, then 36 regression tests on the artifact
+npm run example # serve the example pages at http://127.0.0.1:8765
+npm test        # builds dist/v1.js, then regression tests on the artifact
 npm run build   # dist/v1.js only
+```
+
+`npm run example` is the fast way to see the widget on a page. Add a real link
+key to hold an actual interview against the hosted service:
+
+```
+http://127.0.0.1:8765/example/index.html?key=avk_YOUR_KEY
 ```
 
 `src/widget.js` is the whole widget. `src/script-tag.js` reads the `data-*`
@@ -263,8 +271,11 @@ attributes; `src/index.js` is the package entry. `dist/v1.js` is generated and
 committed, so what we serve can be diffed against what is published without
 running anything.
 
-Open `example/index.html` over HTTP for a host page with the widget on it and a
-log of its events.
+`example/index.html` drives the programmatic API and logs the widget's events;
+`example/script-tag.html` is exactly what a customer pastes. Both need to be
+served over HTTP rather than opened as files, because they load real ES modules
+— which is all `npm run example` does, in twenty lines of `node:http` and no
+dependency.
 
 ## Licence
 

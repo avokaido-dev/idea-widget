@@ -26,6 +26,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "node scripts/build.mjs",
+    "example": "node scripts/serve-example.mjs",
     "test": "node scripts/build.mjs && node --test test/*.test.mjs",
     "prepublishOnly": "npm test"
   },
