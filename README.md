@@ -169,6 +169,33 @@ document.addEventListener("avokaido:closed", (e) => {
 `reason` is the only distinction worth anything in that number: it separates a
 suggestion that was sent from one abandoned.
 
+The dock normally closes itself a couple of seconds after a suggestion is sent,
+so nobody is left wondering whether it went. It stays open instead when the
+framed page asks it to, which it does for one case: somebody from *your* team,
+signed in inside the box, who sent a suggestion in order to build it. You still
+get `avokaido:submitted` either way — a submission that keeps the box open is
+still a submission, and the number you are counting should not change shape
+depending on who sent it.
+
+## The faint badge in the corner
+
+The framed page draws a small badge beside its message box. It is not for the
+people using your product, and it says nothing to them: it opens a tab on the
+Avokaido origin, which is where a session can exist — a page framed on your site
+is a third-party frame, and browsers increasingly refuse those any storage at
+all, so nothing is ever signed in or remembered inside the box on your page.
+
+Somebody who belongs to the workspace this link was issued from gets the build
+console back in the dock: they can start a build of the suggestion, and watch it
+write the change, run QA, pass the dependency gate and open a pull request,
+without leaving the screen it is about. Everybody else — which is nearly
+everybody — gets a page that says the box is not theirs, and nothing is shared
+with it either way.
+
+None of that is in this package. This half only knows that the framed page
+asked to stay open (see above); the sign-in, the token and the console are all
+on the hosted side.
+
 ## What it does to your page
 
 - **Nothing cascades either way.** All UI lives in a shadow root under

@@ -147,6 +147,13 @@ describe("messages from the framed page", () => {
   it("leaves time to read \"Sent\" before closing", () => {
     assert.match(core, /}, 2200\);/);
   });
+
+  it("does not close on a submission that asked to stay open", () => {
+    // The team's build console lives in the framed page, and it is opened by
+    // sending the very suggestion it builds. Closing two seconds later would
+    // shut it on them. The check is before the timer, so no timer is armed.
+    assert.match(core, /if \(event\.data\.keepOpen\) return;\n\s+\/\//);
+  });
 });
 
 describe("the host page's surface", () => {

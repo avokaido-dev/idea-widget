@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0
+
+The framed page may now ask the dock to stay open after a suggestion is sent,
+by putting `keepOpen: true` on the `avokaido:submitted` message. Additive: an
+ordinary submission does not carry the flag and closes exactly as before, and
+the `avokaido:submitted` DOM event fires either way.
+
+It exists for one case. A team member signed in inside the box builds the
+suggestion they just sent — and the dock closing two seconds afterwards would
+shut the console on the thing it operates on.
+
+- No change to the `data-*` attributes, the DOM events, the `createIdeaWidget`
+  API, or the hosted `/widget/v1.js` URL.
+
 ## 1.0.0
 
 First public release. Extracted from the Avokaido monorepo unchanged in
