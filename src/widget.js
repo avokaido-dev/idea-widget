@@ -518,6 +518,13 @@ export function createIdeaWidget(options) {
       emit("ready", {});
     } else if (type === "avokaido:submitted") {
       emit("submitted", {});
+      // STAYS OPEN WHEN THE PAGE ASKS IT TO, which is one case and a real one:
+      // somebody from the team, signed in inside the box, who sent a
+      // suggestion in order to build it. Closing on them would shut the
+      // console two seconds after the thing it operates on came into
+      // existence. Everybody else still gets the close — the flag is absent
+      // from an ordinary submission, and absent is the old behaviour.
+      if (event.data.keepOpen) return;
       // Long enough to read "Sent", short enough not to feel stuck. Closing
       // instantly would leave somebody unsure whether it went.
       setTimeout(function () {
