@@ -41,8 +41,14 @@ you.
 
 What protects you is how little the key can do:
 
-- It authorises exactly one thing: **starting an interview.** It cannot read your
-  inbox, read anyone else's conversation, or file an idea directly.
+- It authorises two things, and both of them are things somebody on your team
+  chose to make public: **starting an interview**, and **reading your roadmap**
+  — the requests your team has explicitly published for that link. A request is
+  on that list only because somebody put it there, and what the list carries is
+  the title and one word for how far it has got: not the summary, not the
+  problem, not who sent it.
+- It cannot read your inbox, read anyone else's conversation, or file an idea
+  directly.
 - It is a **different key** from the server-to-server ingest key. That one can
   write straight into your inbox and is a real secret; this one is refused there.
 - Every link has **daily limits** on interviews and messages, and opening
@@ -69,6 +75,13 @@ key is public, so a script that is not a browser sends whatever origin it likes
 and still reaches the form. What bounds that is the daily limits above, not this
 list. Restricting origins is worth doing — it removes the easy case — but do not
 plan around it being airtight.
+
+**It covers starting an interview, not reading the roadmap.** An interview
+writes a document and spends a model call, so it is worth gating on where the
+request came from; the roadmap is a page of titles your team published on
+purpose, and refusing it to somebody whose browser sent no referrer — a link
+opened from Slack, a privacy browser, a sandboxed parent — would deny the
+ordinary reader to protect against nothing.
 
 Leaving the list **empty keeps the link working from anywhere**, on a smaller
 daily allowance. That allowance is a separate budget from your configured
