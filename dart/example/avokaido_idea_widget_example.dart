@@ -25,7 +25,7 @@ Future<void> main() async {
   try {
     await AvokaidoIdeas.install(
       // Meant to be public: it goes into the page's HTML and authorises nothing
-      // but starting an interview.
+      // beyond starting an interview and reading the published roadmap.
       key: 'avk_YOUR_KEY',
       // Left out here, so the widget draws its own floating button. Pass
       // IdeaLauncher.none if your app already has a feedback button and you

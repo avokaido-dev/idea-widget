@@ -31,9 +31,12 @@ where anyone can read it out of `main.dart.js` — the same as a Firebase web AP
 key. Committing it is fine, and hiding it is not possible, so it is not what
 protects you.
 
-What protects you is that the key authorises exactly one thing — **starting an
-interview** — plus per-link daily limits, per-IP rate limiting on opening
-interviews, and an optional list of origins the link may be embedded on. The
+What protects you is that the key authorises only two things, both of them
+things your team chose to make public — **starting an interview** and **reading
+the roadmap your team published for that link**, which carries a title and one
+word for how far each request has got and nothing else — plus per-link daily
+limits, per-IP rate limiting on opening interviews, and an optional list of
+origins the link may be embedded on. The
 browser reports the embedding origin and your Dart cannot change what it reports,
 so restricting origins stops your key working on somebody else's site. It is a
 deterrent rather than a domain lock: a script that is not a browser sends

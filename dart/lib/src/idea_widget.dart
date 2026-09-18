@@ -97,8 +97,9 @@ abstract final class AvokaidoIdeas {
   /// getting no suggestion box.
   ///
   /// [key] is the `avk_…` link key from your Avokaido workspace. It is meant to
-  /// be public: it goes into the page's HTML, and it authorises nothing but
-  /// starting an interview.
+  /// be public: it goes into the page's HTML, and it authorises nothing beyond
+  /// starting an interview and reading the roadmap your team published for
+  /// that link.
   ///
   /// [scriptUrl] is where the widget itself is served from, and [origin] is
   /// where the interview lives. They are usually the same place, which is why
