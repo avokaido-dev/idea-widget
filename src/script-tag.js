@@ -11,6 +11,9 @@
 
 import { createIdeaWidget } from "./widget.js";
 
+/** What `data-route` may say to switch the route off. */
+var ROUTE_OFF = ["off", "false", "no", "0"];
+
 var script = document.currentScript;
 if (script) {
   var key = (script.getAttribute("data-key") || "").trim();
@@ -60,6 +63,18 @@ if (script) {
       context: function () {
         return script.getAttribute("data-context") || "";
       },
+      // OPT OUT, NEVER OPT IN, and read once because it is a property of the
+      // application rather than of a screen: a site whose paths must not leave
+      // it does not become a site whose paths may halfway through a session.
+      //
+      //   <script … data-route="off">
+      //
+      // Anything other than "off" or "false" leaves the route on, so a typo
+      // fails in the direction of the documented default rather than silently
+      // switching a feature off for everybody.
+      route: ROUTE_OFF.indexOf(
+        String(script.getAttribute("data-route") || "").toLowerCase(),
+      ) < 0,
     });
 
     // The other way in, for a page that already has its own button.

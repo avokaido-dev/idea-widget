@@ -37,12 +37,11 @@ export interface IdeaWidgetOptions {
    * since. An object is flattened to `key: value · key: value`; empty and
    * nullish values are dropped.
    *
-   * Nothing is read off your page — the widget never sends your URL's path,
-   * only its origin. This is the one thing about where somebody is that ever
-   * leaves your app, and it says exactly what you write here. So write a
-   * SCREEN, not a record: "Calendar, week view, no sessions this week", never
-   * a customer's name, an id or anything you would not put in another
-   * company's database.
+   * This says exactly what you write here and nothing else, which makes it
+   * the richer half of "where": a route says `/#/calendar`, this says
+   * "Calendar, week view, no sessions this week". So write a SCREEN, not a
+   * record — never a customer's name, an id, or anything you would not put in
+   * another company's database.
    *
    * It is cleaned and cut to a couple of hundred characters on arrival, and
    * the interview is told it is a description and never an instruction.
@@ -58,6 +57,21 @@ export interface IdeaWidgetOptions {
    * });
    */
   context?: IdeaWidgetContext | (() => IdeaWidgetContext);
+  /**
+   * Whether to send the page's ROUTE — `location.pathname` plus its hash, with
+   * the query string dropped from both. Defaults to `true`.
+   *
+   * On by default because "which screen" is the first question anybody
+   * implementing a suggestion has to answer, and requiring an integration to
+   * answer it means it goes unanswered. Unlike {@link context} it needs
+   * nothing from you.
+   *
+   * The QUERY IS NEVER SENT, either way: `?token=`, `?email=` and `?invite=`
+   * do not leave your page. A path SEGMENT can still name something —
+   * `/patients/4821` is sent as it stands — and that is what this switch is
+   * for. Turn it off and the origin still arrives; only the screen is lost.
+   */
+  route?: boolean;
 }
 
 /**
@@ -97,6 +111,17 @@ export declare function createIdeaWidget(
  * part of what this package promises and may change shape in a patch release.
  */
 export declare function flattenContext(value: unknown): string;
+
+/**
+ * Reduces a location to the route the widget sends: its path and hash, with
+ * the query dropped from both.
+ *
+ * INTERNAL, and exported only so it can be tested without a DOM. It is not
+ * part of what this package promises and may change shape in a patch release.
+ */
+export declare function routeOf(
+  loc: { pathname?: string | null; hash?: string | null } | null | undefined,
+): string;
 
 declare global {
   interface Window {

@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.2.0 — one script tag on your page.
+ * Avokaido idea widget 1.3.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -73,10 +73,19 @@ const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  *        function, because it is read at the moment the box opens and a value
  *        captured when your app booted describes the wrong screen.
  *
- *        Nothing is read off your page: this is the only thing about WHERE
- *        somebody is that ever leaves it, and a page that passes nothing sends
- *        nothing. Send a screen, not a record — "Calendar, week view, no
- *        sessions" and not a customer's name.
+ *        Prose, written by you, and the richer half of the answer: a route
+ *        says `/#/calendar`, a context says "Calendar, week view, no sessions".
+ *        Send a screen, not a record — not a customer's name.
+ * @param {boolean} [options.route=true]
+ *        Whether to send the page's ROUTE — its path and hash, with the query
+ *        string dropped. On by default, because "which screen" is the first
+ *        thing anybody implementing a suggestion has to work out and no
+ *        integration effort should be required to answer it.
+ *
+ *        Pass `false` if your paths name things that must not leave your page.
+ *        The query is never sent either way, which is where `?token=` and
+ *        `?email=` live; a path segment like `/patients/4821` is not, and that
+ *        is the case this switch is for.
  */
 /**
  * The longest context this will put in a URL.
@@ -89,6 +98,42 @@ const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  * proxy refuses.
  */
 var MAX_CONTEXT = 240;
+
+/**
+ * The longest route this will put in a URL.
+ *
+ * The interview cuts it again to its own limit; this is about URLs, exactly as
+ * [MAX_CONTEXT] is, and neither is a trust boundary.
+ */
+var MAX_ROUTE = 200;
+
+/**
+ * The route of a location: which screen, and never which parameters.
+ *
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE, like `flattenContext` beside
+ * it, and taking a location rather than reading the global one for the same
+ * reason — it is the half that can be checked in a package with no jsdom.
+ *
+ * THE QUERY IS NEVER READ. Not from the path, and not from inside the hash:
+ * `#/session/9?tab=sets` becomes `#/session/9`. That is where `?token=`,
+ * `?email=` and `?invite=` live, and it is also the part nobody needs in order
+ * to know which screen somebody was on. The hash itself is kept, because an
+ * app on hash routing puts the entire screen there — `/#/calendar` is the
+ * whole answer on exactly the apps this was written for.
+ *
+ * A path segment can still name a record, and this does not pretend otherwise:
+ * `/patients/4821` survives. A route is only useful if it is the route, so the
+ * honest control is the `route: false` switch rather than a guess here about
+ * which of somebody else's segments is a name.
+ */
+function routeOf(loc) {
+  if (!loc) return "";
+  var path = String(loc.pathname == null ? "/" : loc.pathname);
+  var hash = String(loc.hash == null ? "" : loc.hash).split("?")[0];
+  var route = path + hash;
+  if (route.charAt(0) !== "/") return "";
+  return route.slice(0, MAX_ROUTE);
+}
 
 /**
  * Flattens whatever `context` gave us into one line.
@@ -191,12 +236,18 @@ function createIdeaWidget(options) {
    * this the two arrive indistinguishable in one list, and the first test
    * somebody runs on staging looks exactly like a real request.
    *
-   * The ORIGIN only, and that has not changed. A full URL would carry the path
-   * somebody happened to be on, which can name a candidate or a company, and
-   * none of that belongs in another company's database. `context` is the
-   * deliberate exception and it is the opposite shape: nothing is read off this
-   * page, the host app writes the sentence itself, and a page that passes
-   * nothing sends nothing — which is every page until somebody opts in.
+   * THE ORIGIN AND THE ROUTE, AND NEVER THE QUERY. The origin says which
+   * application; the route says which screen of it, which is the first thing
+   * anybody implementing a suggestion has to work out and the thing a
+   * screenshot cannot be searched for. What is deliberately left behind is the
+   * query string, because that is where the strings live that can name a
+   * candidate or a company — and dropping it HERE rather than at the far end
+   * means it never leaves this page at all.
+   *
+   * `context` sits beside it and is the opposite bargain: prose the host app
+   * writes itself, empty until somebody opts in, and richer than a path when
+   * they do. `route: false` turns the automatic half off for a page whose own
+   * segments are the sensitive part.
    */
   function frameUrlNow() {
     var url =
@@ -205,6 +256,10 @@ function createIdeaWidget(options) {
       encodeURIComponent(key) +
       "?embed=1&from=" +
       encodeURIComponent(location.origin);
+    if (opts.route !== false) {
+      var route = routeOf(location);
+      if (route) url += "&route=" + encodeURIComponent(route);
+    }
     var at = contextNow();
     if (at) url += "&at=" + encodeURIComponent(at);
     return url;
@@ -742,6 +797,9 @@ function createIdeaWidget(options) {
  */
 
 
+/** What `data-route` may say to switch the route off. */
+var ROUTE_OFF = ["off", "false", "no", "0"];
+
 var script = document.currentScript;
 if (script) {
   var key = (script.getAttribute("data-key") || "").trim();
@@ -791,6 +849,18 @@ if (script) {
       context: function () {
         return script.getAttribute("data-context") || "";
       },
+      // OPT OUT, NEVER OPT IN, and read once because it is a property of the
+      // application rather than of a screen: a site whose paths must not leave
+      // it does not become a site whose paths may halfway through a session.
+      //
+      //   <script … data-route="off">
+      //
+      // Anything other than "off" or "false" leaves the route on, so a typo
+      // fails in the direction of the documented default rather than silently
+      // switching a feature off for everybody.
+      route: ROUTE_OFF.indexOf(
+        String(script.getAttribute("data-route") || "").toLowerCase(),
+      ) < 0,
     });
 
     // The other way in, for a page that already has its own button.
