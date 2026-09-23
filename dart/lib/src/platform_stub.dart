@@ -22,7 +22,18 @@ Future<void> install({
   String? label,
   required String launcher,
   required String position,
+  String? context,
 }) async => _unsupported();
+
+/// Does nothing off the web, rather than throwing.
+///
+/// THE ONE CALL HERE THAT IS NOT AN ERROR TO MAKE. Everything else in this
+/// file is a caller asking the widget to DO something; this is a caller
+/// keeping it informed, and it will live in a router that runs on every
+/// platform. Throwing would turn every navigation on iOS into a crash, so a
+/// cross-platform app would have to wrap each one in `kIsWeb` — to tell a
+/// widget that is not there about a screen it will never show.
+void setContext(String context) {}
 
 void open() => _unsupported();
 void close() => _unsupported();

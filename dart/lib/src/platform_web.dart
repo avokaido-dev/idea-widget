@@ -37,6 +37,7 @@ Future<void> install({
   String? label,
   required String launcher,
   required String position,
+  String? context,
 }) {
   final existing = _loading;
   if (existing != null) return existing.future;
@@ -66,6 +67,9 @@ Future<void> install({
   }
   script.setAttribute('data-launcher', launcher);
   script.setAttribute('data-position', position);
+  if (context != null && context.trim().isNotEmpty) {
+    script.setAttribute('data-context', context.trim());
+  }
 
   script.onload = (web.Event _) {
     _listenForDomEvents();
@@ -133,6 +137,31 @@ extension type _Avokaido._(JSObject _) implements JSObject {
 }
 
 void _call(JSFunction? fn) => fn?.callAsFunction();
+
+/// Rewrites the attribute the widget re-reads every time the box opens.
+///
+/// ON THE TAG RATHER THAN THROUGH A CALLBACK, because the tag is the only
+/// handle this package has. The script build reads `data-context` inside its
+/// own `context` function, and that function runs at open — so writing the
+/// attribute now is the whole job, and there is nothing to keep in sync after.
+///
+/// Silently does nothing before `install`, deliberately. An app that sets this
+/// from its router will do so on its first route, sometimes before the tag
+/// exists, and throwing there would make the ordering the caller's problem for
+/// no gain: the next call wins, and there is always a next one — a router that
+/// reports one screen reports the rest.
+void setContext(String context) {
+  final script = web.document.getElementById(_tagId);
+  if (script == null) return;
+  final trimmed = context.trim();
+  if (trimmed.isEmpty) {
+    // Cleared rather than set to nothing, so the widget's own "did the host
+    // say anything" check answers no and no `at` is sent at all.
+    script.removeAttribute('data-context');
+    return;
+  }
+  script.setAttribute('data-context', trimmed);
+}
 
 void open() {
   final api = _avokaido;

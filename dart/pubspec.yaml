@@ -3,7 +3,7 @@ description: >-
   Embeddable suggestion widget for Dart and Flutter web apps. One call opens a
   hosted interview that turns "this is wrong, look" into a feature request your
   team can act on.
-version: 1.0.0
+version: 1.1.0
 repository: https://github.com/avokaido-dev/idea-widget
 issue_tracker: https://github.com/avokaido-dev/idea-widget/issues
 

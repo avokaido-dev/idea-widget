@@ -57,6 +57,16 @@ void main() {
       );
       expect(AvokaidoIdeas.isInstalled, isFalse);
     });
+
+    test('except setContext, which is safe to call anywhere', () {
+      // It belongs in a router, and a router runs on every platform. If this
+      // threw like the rest of the stub, a cross-platform app would have to
+      // wrap every navigation in `kIsWeb` to tell a widget that is not there
+      // about a screen it will never show.
+      expect(() => AvokaidoIdeas.setContext('Calendar, week view'),
+          returnsNormally);
+      expect(() => AvokaidoIdeas.setContext(''), returnsNormally);
+    });
   });
 
   test('the default script URL is the hosted widget', () {

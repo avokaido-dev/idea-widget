@@ -13,6 +13,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { dirname, join } from "node:path";
+import { flattenContext } from "../src/widget.js";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -121,6 +122,101 @@ describe("the dock", () => {
 
   it("takes the whole screen where there is no page left to keep visible", () => {
     assert.match(dist, /@media \(max-width: 560px\)/);
+  });
+});
+
+describe("where the person is", () => {
+  // The ONE decision in this feature that is invisible in review and expensive
+  // to get wrong. `createIdeaWidget` runs when the host app boots; by the time
+  // somebody presses the launcher they are four screens away. A URL built once
+  // at create would describe a screen nobody has looked at for twenty minutes,
+  // and would do it convincingly.
+  it("builds the frame URL at open, not once at create", () => {
+    assert.match(core, /frame\.src = frameUrlNow\(\)/);
+    // No hoisted `var frameUrl = …` left behind for somebody to reach for.
+    assert.equal(/var frameUrl\s*=/.test(core), false);
+  });
+
+  it("sends nothing at all when the host app says nothing", () => {
+    // The default has to stay silence. Every embed that exists today passes no
+    // context, and none of them should start sending a query parameter.
+    assert.match(core, /if \(at\) url \+= "&at=" \+ encodeURIComponent\(at\)/);
+  });
+
+  it("still sends the origin and never the path", () => {
+    // The decision `context` is a deliberate exception to, not a repeal of: a
+    // path can name a candidate or a company, and nothing here reads one.
+    assert.match(dist, /\?embed=1&from=/);
+    assert.equal(/from=" \+\s*encodeURIComponent\(location\.href/.test(dist), false);
+    assert.equal(/location\.pathname/.test(dist), false);
+  });
+
+  it("survives a host app whose context() throws", () => {
+    // It calls into somebody else's code, on a page we do not control, at the
+    // moment a person is asking for help. A throw must cost the context and
+    // nothing else.
+    assert.match(core, /catch \(err\) \{[\s\S]*?opening without it/);
+  });
+
+  it("caps what it will put in a URL", () => {
+    assert.match(core, /slice\(0, MAX_CONTEXT\)/);
+  });
+
+  it("re-reads data-context on every open, never once at load", () => {
+    // The whole point of the attribute. Read once, it would describe the page
+    // the app booted on for the rest of the session — and would do it
+    // convincingly, which is worse than sending nothing.
+    assert.match(dist, /context: function \(\) \{[\s\S]*?getAttribute\("data-context"\)/);
+  });
+});
+
+describe("flattenContext", () => {
+  it("passes a plain sentence straight through", () => {
+    assert.equal(
+      flattenContext("Calendar, week view, no sessions"),
+      "Calendar, week view, no sessions",
+    );
+  });
+
+  it("keeps the keys, because a value alone is not a screen", () => {
+    // "week" on its own says nothing; "view: week" says where somebody is.
+    assert.equal(
+      flattenContext({ screen: "Kalender", view: "week" }),
+      "screen: Kalender · view: week",
+    );
+  });
+
+  it("drops what nobody wrote rather than writing it as undefined", () => {
+    // "note: undefined" reads, to the interview, like a screen that has a note.
+    assert.equal(
+      flattenContext({ screen: "Kalender", note: null, filter: "" }),
+      "screen: Kalender",
+    );
+    assert.equal(flattenContext({}), "");
+    assert.equal(flattenContext(null), "");
+    assert.equal(flattenContext(undefined), "");
+  });
+
+  it("keeps a zero, which is a fact and not an absence", () => {
+    // "no sessions this week" is exactly the kind of thing worth sending, and
+    // a falsy check rather than a nullish one would have eaten it.
+    assert.equal(
+      flattenContext({ sessions: 0, ok: false }),
+      "sessions: 0 · ok: false",
+    );
+  });
+
+  it("flattens a list, and a nested object under its own key", () => {
+    assert.equal(flattenContext(["Kalender", "week"]), "Kalender · week");
+    assert.equal(
+      flattenContext({ screen: "Kalender", filters: { groups: 2 } }),
+      "screen: Kalender · filters: groups: 2",
+    );
+  });
+
+  it("gives nothing for the things that cannot be written down", () => {
+    assert.equal(flattenContext(function () {}), "");
+    assert.equal(flattenContext(Symbol("x")), "");
   });
 });
 

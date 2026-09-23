@@ -50,7 +50,69 @@ export const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  * @param {string} [options.label]        launcher text and iframe title
  * @param {"floating"|"none"} [options.launcher]
  * @param {"bottom-right"|"bottom-left"|"top-right"|"top-left"} [options.position]
+ * @param {string|Object|Function} [options.context]
+ *        Where in YOUR app the person is, so the interview does not have to
+ *        spend a question asking. A string, an object (flattened to
+ *        `key: value · key: value`), or a function returning either — pass a
+ *        function, because it is read at the moment the box opens and a value
+ *        captured when your app booted describes the wrong screen.
+ *
+ *        Nothing is read off your page: this is the only thing about WHERE
+ *        somebody is that ever leaves it, and a page that passes nothing sends
+ *        nothing. Send a screen, not a record — "Calendar, week view, no
+ *        sessions" and not a customer's name.
  */
+/**
+ * The longest context this will put in a URL.
+ *
+ * ABOUT URLS, NOT ABOUT SAFETY. The interview cleans this string and cuts it
+ * to its own limit before it goes anywhere near a model; nothing here is a
+ * trust boundary, because the key on this page can be scraped and the same
+ * request posted without the widget at all. This number exists so that a
+ * host app which hands over its whole view model does not produce a URL a
+ * proxy refuses.
+ */
+var MAX_CONTEXT = 240;
+
+/**
+ * Flattens whatever `context` gave us into one line.
+ *
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE. It is not part of what this
+ * package promises and may change shape in a patch release; `createIdeaWidget`
+ * is the API. It is out here rather than inside the closure because it touches
+ * no DOM and closes over nothing, which is what lets it be checked at all in a
+ * package that deliberately has no jsdom.
+ *
+ * An object becomes `key: value · key: value`, because the keys are the half
+ * that makes a value mean anything — "week" on its own is not a screen, and
+ * "view: week" is. Empty and nullish values are dropped rather than written
+ * as "note: undefined", which reads to the interview like a screen that has
+ * a note nobody wrote.
+ */
+export function flattenContext(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map(flattenContext)
+      .filter(function (part) { return part !== ""; })
+      .join(" · ");
+  }
+  if (typeof value === "object") {
+    var out = [];
+    for (var k in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, k)) continue;
+      var part = flattenContext(value[k]);
+      if (part !== "") out.push(k + ": " + part);
+    }
+    return out.join(" · ");
+  }
+  return "";
+}
+
 export function createIdeaWidget(options) {
   var opts = options || {};
 
@@ -72,21 +134,65 @@ export function createIdeaWidget(options) {
   var corner = String(opts.position || "").toLowerCase();
   if (CORNERS.indexOf(corner) < 0) corner = "bottom-right";
 
-  // WHERE THE SUGGESTION CAME FROM, passed in because the page cannot find out.
-  // A cross-origin frame may not read its parent's location, and one link is
-  // deliberately shared by a customer's staging and production — so without
-  // this the two arrive indistinguishable in one list, and the first test
-  // somebody runs on staging looks exactly like a real request.
-  //
-  // The ORIGIN only. A full URL would carry the path somebody happened to be
-  // on, which can name a candidate or a company, and none of that belongs in
-  // another company's database.
-  var frameUrl =
-    origin +
-    "/idea/" +
-    encodeURIComponent(key) +
-    "?embed=1&from=" +
-    encodeURIComponent(location.origin);
+  /**
+   * Where the person is, as this page is willing to say.
+   *
+   * CALLED AT OPEN, NEVER AT CREATE, and that is the whole reason it is a
+   * function rather than a value. `createIdeaWidget` runs once when the app
+   * boots; by the time somebody presses the launcher they are four screens
+   * away, and a context captured at boot would describe a screen nobody has
+   * been looking at for twenty minutes. The iframe is built fresh on every
+   * open (see `close`, which drops it), so re-reading here is enough — the
+   * only case it does not cover is navigating while the box is already open,
+   * which the dock deliberately allows because it covers nothing.
+   *
+   * A HOST APP'S BUG MUST NOT STOP THE BOX OPENING. This calls into somebody
+   * else's code, on a page we do not control, at the moment a person is asking
+   * for help — so a throw here is swallowed and the widget opens with no
+   * context, which is exactly what every widget did before this existed.
+   */
+  function contextNow() {
+    var raw = opts.context;
+    try {
+      if (typeof raw === "function") raw = raw();
+    } catch (err) {
+      // Reported, not thrown: the integrator wants to know, and the person
+      // pressing the button does not.
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[avokaido] context() threw; opening without it", err);
+      }
+      return "";
+    }
+    return flattenContext(raw).replace(/\s+/g, " ").trim().slice(0, MAX_CONTEXT);
+  }
+
+  /**
+   * The URL for one open.
+   *
+   * WHERE THE SUGGESTION CAME FROM, passed in because the page cannot find out.
+   * A cross-origin frame may not read its parent's location, and one link is
+   * deliberately shared by a customer's staging and production — so without
+   * this the two arrive indistinguishable in one list, and the first test
+   * somebody runs on staging looks exactly like a real request.
+   *
+   * The ORIGIN only, and that has not changed. A full URL would carry the path
+   * somebody happened to be on, which can name a candidate or a company, and
+   * none of that belongs in another company's database. `context` is the
+   * deliberate exception and it is the opposite shape: nothing is read off this
+   * page, the host app writes the sentence itself, and a page that passes
+   * nothing sends nothing — which is every page until somebody opts in.
+   */
+  function frameUrlNow() {
+    var url =
+      origin +
+      "/idea/" +
+      encodeURIComponent(key) +
+      "?embed=1&from=" +
+      encodeURIComponent(location.origin);
+    var at = contextNow();
+    if (at) url += "&at=" + encodeURIComponent(at);
+    return url;
+  }
 
   /** Everything this instance attached to the page, for destroy(). */
   var teardown = [];
@@ -224,7 +330,9 @@ export function createIdeaWidget(options) {
     });
 
     frame = document.createElement("iframe");
-    frame.src = frameUrl;
+    // Built here rather than once at create, so the context describes the
+    // screen somebody is on NOW. See `contextNow`.
+    frame.src = frameUrlNow();
     frame.title = label;
     frame.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
     // Deliberately NOT sandboxed. A sandbox without `allow-same-origin` gives

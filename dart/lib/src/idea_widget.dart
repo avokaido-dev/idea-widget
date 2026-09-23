@@ -113,6 +113,7 @@ abstract final class AvokaidoIdeas {
     String? label,
     IdeaLauncher launcher = IdeaLauncher.floating,
     IdeaCorner position = IdeaCorner.bottomRight,
+    String? context,
   }) {
     if (key.trim().isEmpty) {
       throw ArgumentError.value(key, 'key', 'must not be empty');
@@ -124,8 +125,38 @@ abstract final class AvokaidoIdeas {
       label: label,
       launcher: launcher.value,
       position: position.value,
+      context: context,
     );
   }
+
+  /// Tells the widget where in YOUR app the person is now.
+  ///
+  /// The interview has about four questions before it must stop asking and
+  /// write something down, and without this one of them goes on "what were you
+  /// doing?" — a question the screen had already answered. Call it from your
+  /// router, on every navigation:
+  ///
+  /// ```dart
+  /// AvokaidoIdeas.setContext('Calendar, week view, no sessions this week');
+  /// ```
+  ///
+  /// It is read at the moment the box opens, not when you call it, so keeping
+  /// it current is the whole job. Passing an empty string clears it, and the
+  /// widget then sends nothing — which is also what happens if you never call
+  /// this at all.
+  ///
+  /// WRITE THE SCREEN, NOT THE RECORD. This is the only thing about where
+  /// somebody is that ever leaves your app — the widget sends your origin and
+  /// never your URL's path — and it says exactly what you put in it. "Invoices,
+  /// filtered to overdue" is a screen; "Anna Svensson's invoices" is a person's
+  /// name in somebody else's database. It is cleaned and cut to a couple of
+  /// hundred characters on arrival, and the interview is told it is a
+  /// description and never an instruction.
+  ///
+  /// Safe to call before [install] and safe to call off the web, where it does
+  /// nothing: it belongs in a router that runs on every platform, and every
+  /// other call in this class throws there.
+  static void setContext(String context) => platform.setContext(context);
 
   /// Where the widget is served from by default.
   static const String defaultScriptUrl =

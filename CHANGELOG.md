@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.2.0
+
+A new `context` option: where in YOUR app the person is standing, so the
+interview does not spend one of its four questions asking what they were doing.
+A string, an object, or — preferably — a function, read at the moment the box
+opens rather than when your app booted.
+
+```js
+createIdeaWidget({
+  key: "avk_…",
+  context: () => ({ screen: "Calendar", view: "week" }),
+});
+```
+
+Opt-in, and it changes nothing for an embed that does not pass it: the frame
+URL carries no `at` parameter and the interview behaves exactly as before.
+Nothing is read off your page — the widget still sends your origin and never
+your path. What `context` sends is what you write in it, so write a screen and
+not a record.
+
+- The frame URL is now built at `open()` rather than once at `createIdeaWidget`,
+  which is what lets the context describe the screen somebody is actually on.
+  No behavioural change for anything else in it.
+- `flattenContext` is exported for its own tests. It is internal and may change
+  shape in a patch release; `createIdeaWidget` is the API.
+- No change to the `data-*` attributes, the DOM events, or the rest of the
+  `createIdeaWidget` options.
+
 ## 1.1.0
 
 The framed page may now ask the dock to stay open after a suggestion is sent,
