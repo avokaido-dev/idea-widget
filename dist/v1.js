@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.3.0 — one script tag on your page.
+ * Avokaido idea widget 1.4.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -296,11 +296,18 @@ function createIdeaWidget(options) {
       "  display: inline-flex; align-items: center; gap: 8px;",
       "  padding: 10px 16px; border: 0; border-radius: 999px;",
       "  font: 500 14px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;",
-      "  color: #fff; background: #1f7a4d; cursor: pointer;",
+      /* AVOKAIDO GREEN, AND THE SAME ONE THE INTERVIEW USES.
+         The launcher and the page it opens are one surface to the person
+         pressing it, and until now they were two different greens: the
+         button was #1f7a4d and the interview inside the frame is #2f6b3b.
+         Nobody sees them side by side — the button is behind the box it
+         opens — but they are seen four hundred milliseconds apart, which is
+         close enough. */
+      "  color: #fff; background: #2f6b3b; cursor: pointer;",
       "  box-shadow: 0 2px 6px rgba(0,0,0,.18), 0 8px 24px rgba(0,0,0,.14);",
       "}",
-      ".launcher:hover { background: #196340 }",
-      ".launcher:focus-visible { outline: 2px solid #1f7a4d; outline-offset: 3px }",
+      ".launcher:hover { background: #24552e }",
+      ".launcher:focus-visible { outline: 2px solid #2f6b3b; outline-offset: 3px }",
       ".bottom-right { right: 20px; bottom: 20px }",
       ".bottom-left  { left: 20px;  bottom: 20px }",
       ".top-right    { right: 20px; top: 20px }",
@@ -354,10 +361,10 @@ function createIdeaWidget(options) {
       ".close {",
       "  position: absolute; top: 8px; right: 10px; z-index: 1;",
       "  width: 26px; height: 26px; border: 0; border-radius: 7px;",
-      "  font: 400 17px/1 system-ui, sans-serif; color: #555;",
+      "  font: 400 17px/1 system-ui, sans-serif; color: #4b5a4d;",
       "  background: rgba(255,255,255,.86); cursor: pointer;",
       "}",
-      ".close:hover { background: #ececec; color: #000 }",
+      ".close:hover { background: #f3f4ef; color: #0a1b0d }",
       /* On a phone there is no page left to keep visible, so it takes the
          screen — a 384px card floating over a 390px viewport is a lightbox
          with wasted margins. */
