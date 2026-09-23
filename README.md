@@ -148,6 +148,7 @@ Script tag attributes, and the equivalent options:
 | `data-launcher` | `launcher` | `"floating"` | `"none"` if your page already has its own button. |
 | `data-position` | `position` | `"bottom-right"` | Any of the four corners. An unrecognised value falls back rather than leaving the dock unpositioned. |
 | `data-context` | `context` | none | Where in your app the person is, so the interview need not ask. Re-read on every open — keep it current as they navigate. The option also takes an object or a function; see [Telling it where the person is](#telling-it-where-the-person-is). |
+| `data-route` | `route` | on | Send the page's path and hash, so a suggestion says which screen it is about. The query string is never sent either way. `data-route="off"` for an app whose paths name things that must not leave it; see [What it sends](#what-it-sends). |
 | `data-origin` | `origin` | the script's own origin | Where the interview lives. The script-tag build defaults to the origin it was served from, so an embed served from a preview channel frames the preview. **Set this explicitly if you serve the file from a third-party CDN** (jsDelivr, unpkg) or self-host it — otherwise the widget frames the CDN. |
 
 ## Telling it where the person is
@@ -206,12 +207,12 @@ Write the **screen**, not the **record**.
 | `{ screen: "Invoices", filter: "overdue" }` | `{ screen: "Invoices", customerId: "cus_8812" }` |
 | `{ screen: "Settings", tab: "Billing" }` | `document.title` on a page titled with a person's name |
 
-Nothing is read off your page. The widget still sends your origin and never
-your URL's path, for the reason [What it sends](#what-it-sends) gives — and
-`context` is the deliberate exception, shaped the other way round: it says
+The widget already sends your origin and your route, which answers *which
+screen* on its own — see [What it sends](#what-it-sends). `context` is the
+richer half and the opposite shape: nothing is read off your page, it says
 exactly what you write in it, and a page that passes nothing sends nothing.
-That is every page until somebody opts in, including yours until you edit the
-snippet above.
+`/#/calendar` is a screen; "Calendar, week view, no sessions this week" is what
+somebody needed when they pressed the button.
 
 On arrival it is cleaned — control characters, line breaks and backticks go —
 cut to a couple of hundred characters, and handed to the interview inside a
@@ -352,16 +353,37 @@ The `data-*` attributes, the `avokaido:*` events and the
 
 ## What it sends
 
-The origin of the page the widget is embedded on — `https://yourapp.com`, never
-a path. A path can name a candidate, a company or a customer, and none of that
-belongs in somebody else's database. It is sent because the framed page cannot
-find out for itself: a cross-origin frame may not read its parent's location, and
-one link is deliberately shared by your staging and production, so without it the
-two arrive indistinguishable in one list.
+**The origin** of the page the widget is embedded on — `https://yourapp.com`.
+It is sent because the framed page cannot find out for itself: a cross-origin
+frame may not read its parent's location, and one link is deliberately shared
+by your staging and production, so without it the two arrive indistinguishable
+in one list.
 
-The one exception is `context`, and it is opt-in and the opposite shape: nothing
-is read off your page, you write the sentence yourself, and a page that passes
-nothing sends nothing. See [Telling it where the person is](#telling-it-where-the-person-is).
+**The route** — `location.pathname` plus the hash, so `/#/calendar` or
+`/teams/overview`. Which screen somebody was on is the first thing anybody
+implementing their suggestion has to work out, and it is the one thing a
+screenshot cannot be searched for.
+
+**Never the query string.** `?token=`, `?email=`, `?invite=` and everything
+like them stay on your page, and the query is dropped from inside the hash too
+— `#/session/9?tab=sets` is sent as `#/session/9`. That reduction happens in
+your browser, before anything is sent, which is the only place the guarantee is
+worth anything.
+
+A path SEGMENT can still name something: `/patients/4821` is sent as it stands,
+because a route is only useful if it is the route. If that is not a trade your
+application can make, turn it off — the origin still arrives, only the screen
+is lost:
+
+```html
+<script src="https://app-avokaido-eu.web.app/widget/v1.js"
+        data-key="avk_YOUR_KEY" data-route="off" defer></script>
+```
+
+`context` sits beside the route and is the opposite shape: nothing is read off
+your page, you write the sentence yourself, and it says more than a path can —
+"Calendar, week view, no sessions this week" against `/#/calendar`. See
+[Telling it where the person is](#telling-it-where-the-person-is).
 
 Everything else that reaches us is what the person typed and any screenshot they
 chose to share.

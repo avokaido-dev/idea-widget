@@ -13,7 +13,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { dirname, join } from "node:path";
-import { flattenContext } from "../src/widget.js";
+import { flattenContext, routeOf } from "../src/widget.js";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -143,12 +143,26 @@ describe("where the person is", () => {
     assert.match(core, /if \(at\) url \+= "&at=" \+ encodeURIComponent\(at\)/);
   });
 
-  it("still sends the origin and never the path", () => {
-    // The decision `context` is a deliberate exception to, not a repeal of: a
-    // path can name a candidate or a company, and nothing here reads one.
+  it("sends the origin and the route, and never the whole href", () => {
     assert.match(dist, /\?embed=1&from=/);
+    assert.match(dist, /url \+= "&route=" \+ encodeURIComponent\(route\)/);
+    // `from` stays the origin. An href there would carry the query around the
+    // back of everything below.
     assert.equal(/from=" \+\s*encodeURIComponent\(location\.href/.test(dist), false);
-    assert.equal(/location\.pathname/.test(dist), false);
+  });
+
+  // THE LINE THIS FEATURE IS DRAWN ON. The route says which screen; the query
+  // is where `?token=`, `?email=` and `?invite=` live, and it is no part of
+  // the answer. Dropped HERE rather than at the far end, so it never leaves
+  // the host page at all — which is the only place that guarantee can be made.
+  it("never reads the query string, on the path or in the hash", () => {
+    assert.equal(/location\.search/.test(dist), false);
+    assert.match(core, /\.split\("\?"\)\[0\]/);
+  });
+
+  it("lets a page whose paths are sensitive switch the route off", () => {
+    assert.match(core, /if \(opts\.route !== false\)/);
+    assert.match(dist, /data-route/);
   });
 
   it("survives a host app whose context() throws", () => {
@@ -167,6 +181,35 @@ describe("where the person is", () => {
     // the app booted on for the rest of the session — and would do it
     // convincingly, which is worse than sending nothing.
     assert.match(dist, /context: function \(\) \{[\s\S]*?getAttribute\("data-context"\)/);
+  });
+});
+
+describe("routeOf", () => {
+  it("keeps the path and the hash, which is where the screen usually is", () => {
+    assert.equal(routeOf({ pathname: "/", hash: "#/app" }), "/#/app");
+    assert.equal(routeOf({ pathname: "/teams/overview", hash: "" }), "/teams/overview");
+    assert.equal(routeOf({ pathname: "/", hash: "" }), "/");
+  });
+
+  it("drops the query from inside the hash too", () => {
+    assert.equal(
+      routeOf({ pathname: "/", hash: "#/session/9?tab=sets" }),
+      "/#/session/9",
+    );
+  });
+
+  it("caps what it will put in a URL", () => {
+    assert.equal(routeOf({ pathname: "/" + "a".repeat(400), hash: "" }).length, 200);
+  });
+
+  it("returns nothing rather than something odd", () => {
+    assert.equal(routeOf(null), "");
+    assert.equal(routeOf(undefined), "");
+    assert.equal(routeOf({ pathname: "no-leading-slash", hash: "" }), "");
+  });
+
+  it("treats a location with nothing on it as the root", () => {
+    assert.equal(routeOf({}), "/");
   });
 });
 

@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.3.0
+
+The widget now sends the page's **route** — `location.pathname` plus the hash,
+so `/#/calendar` — alongside the origin it already sent. Which screen somebody
+was on is the first thing anybody implementing their suggestion has to work
+out, and until now the only way to answer it was to opt into `context`, which
+most embeds never will.
+
+**The query string is never sent**, and that is the line this feature is drawn
+on. `?token=`, `?email=`, `?invite=` and everything like them stay on your
+page, and the query is dropped from inside the hash too: `#/session/9?tab=sets`
+is sent as `#/session/9`. The reduction happens in your browser, before the
+request, which is the only place that promise means anything.
+
+A path SEGMENT can still name something — `/patients/4821` is sent as it
+stands, because a route is only useful if it is the route. If your application
+cannot make that trade, switch it off:
+
+```html
+<script src="…/widget/v1.js" data-key="avk_…" data-route="off" defer></script>
+```
+
+```js
+createIdeaWidget({ key: "avk_…", route: false });
+```
+
+This is a change in what leaves your page, so read
+[What it sends](README.md#what-it-sends) before you take it.
+
+- `data-route` is read once at load rather than on every open, unlike
+  `data-context`: whether paths may leave a site is a property of the site, not
+  of a screen. Anything other than `off`/`false`/`no`/`0` leaves it on, so a
+  typo fails towards the documented default.
+- `routeOf` is exported for its own tests. It is internal and may change shape
+  in a patch release; `createIdeaWidget` is the API.
+- No change to the other `data-*` attributes, the DOM events, or the rest of
+  the `createIdeaWidget` options.
+
 ## 1.2.0
 
 A new `context` option: where in YOUR app the person is standing, so the
