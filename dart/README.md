@@ -117,6 +117,40 @@ on one route of a larger app.
 | `position` | `IdeaCorner.bottomRight` | Any of the four corners. |
 | `scriptUrl` | the hosted widget | Where the widget script is served from. |
 | `origin` | derived from `scriptUrl` | Where the interview lives. Set it only if you serve the script from somewhere that does not host the interview — a third-party CDN, or a self-hosted copy. |
+| `context` | none | Where in your app the person starts out. Usually better set from your router with `setContext` — see below. |
+
+## Telling it where the person is
+
+The interview has about four questions before it has to stop asking and write
+something down. Without help, one of them goes on *"what were you doing?"* — a
+question the screen had already answered, asked of somebody who came to you
+because something was in their way.
+
+Call `setContext` from your router, on every navigation:
+
+```dart
+AvokaidoIdeas.setContext('Calendar, week view, no sessions this week');
+```
+
+It is read at the moment the box opens, not when you call it, so keeping it
+current is the whole job. An empty string clears it, and the widget then sends
+nothing — which is also what happens if you never call this at all.
+
+It is safe before `install` and safe off the web, where it does nothing. That
+is the one exception to [Web only](#web-only) below, and it is there so a
+router shared with iOS does not need a `kIsWeb` around every line.
+
+**Write the screen, not the record.** This is the only thing about where
+somebody is that ever leaves your app — the widget sends your origin and never
+your URL's path — and it says exactly what you put in it.
+
+| Good | Not this |
+|---|---|
+| `'Calendar, week view, no sessions'` | `'Anna Svensson\'s sessions'` |
+| `'Invoices, filtered to overdue'` | `'Invoice for Acme AB, 41 200 SEK'` |
+
+On arrival it is cleaned, cut to a couple of hundred characters, and handed to
+the interview as a description of a screen — never as an instruction.
 
 ## Web only
 

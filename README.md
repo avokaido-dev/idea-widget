@@ -147,7 +147,80 @@ Script tag attributes, and the equivalent options:
 | `data-label` | `label` | `"Suggest a change"` | Launcher text, and the iframe's accessible title. |
 | `data-launcher` | `launcher` | `"floating"` | `"none"` if your page already has its own button. |
 | `data-position` | `position` | `"bottom-right"` | Any of the four corners. An unrecognised value falls back rather than leaving the dock unpositioned. |
+| `data-context` | `context` | none | Where in your app the person is, so the interview need not ask. Re-read on every open — keep it current as they navigate. The option also takes an object or a function; see [Telling it where the person is](#telling-it-where-the-person-is). |
 | `data-origin` | `origin` | the script's own origin | Where the interview lives. The script-tag build defaults to the origin it was served from, so an embed served from a preview channel frames the preview. **Set this explicitly if you serve the file from a third-party CDN** (jsDelivr, unpkg) or self-host it — otherwise the widget frames the CDN. |
+
+## Telling it where the person is
+
+The interview has about four questions before it has to stop asking and write
+something down. Without help, one of them goes on *"what were you doing when
+you last needed this?"* — a question the screen had already answered, asked of
+somebody who came here because something was in their way.
+
+`context` answers it for them:
+
+```js
+createIdeaWidget({
+  key: "avk_…",
+  context: () => ({
+    screen: "Calendar",
+    view: "week",
+    note: "no sessions this week",
+  }),
+});
+```
+
+**Pass a function.** It is read at the moment the box opens, so it describes
+where somebody actually is. A plain value is read at the same moment, but it
+was decided when your app booted — which, by the time anybody presses the
+launcher, is four screens ago.
+
+A string works too, and an object is flattened to `key: value · key: value`
+with empty and nullish values dropped.
+
+**From a `<script>` tag**, where you cannot pass a function, set `data-context`
+on the tag as the person navigates. It is re-read every time the box opens, so
+keeping it current is the whole job:
+
+```html
+<script src="https://app-avokaido-eu.web.app/widget/v1.js"
+        id="avokaido-idea-widget"
+        data-key="avk_…"
+        data-context="Calendar, week view"></script>
+```
+
+```js
+// wherever your router tells you the screen changed
+document
+  .getElementById("avokaido-idea-widget")
+  .setAttribute("data-context", "Invoices, filtered to overdue");
+```
+
+### What to put in it, and what not to
+
+Write the **screen**, not the **record**.
+
+| Good | Not this |
+|---|---|
+| `"Calendar, week view, no sessions this week"` | `"Viewing Anna Svensson's sessions"` |
+| `{ screen: "Invoices", filter: "overdue" }` | `{ screen: "Invoices", customerId: "cus_8812" }` |
+| `{ screen: "Settings", tab: "Billing" }` | `document.title` on a page titled with a person's name |
+
+Nothing is read off your page. The widget still sends your origin and never
+your URL's path, for the reason [What it sends](#what-it-sends) gives — and
+`context` is the deliberate exception, shaped the other way round: it says
+exactly what you write in it, and a page that passes nothing sends nothing.
+That is every page until somebody opts in, including yours until you edit the
+snippet above.
+
+On arrival it is cleaned — control characters, line breaks and backticks go —
+cut to a couple of hundred characters, and handed to the interview inside a
+fenced block that tells it this is a description of a screen and never an
+instruction, whatever it appears to say. Write it as though a stranger will
+read it, because on the other end one does.
+
+If your `context()` throws, the box opens without it and logs a warning. A bug
+in your app is not a reason somebody cannot ask you for something.
 
 ## Opening it yourself
 
@@ -285,6 +358,10 @@ belongs in somebody else's database. It is sent because the framed page cannot
 find out for itself: a cross-origin frame may not read its parent's location, and
 one link is deliberately shared by your staging and production, so without it the
 two arrive indistinguishable in one list.
+
+The one exception is `context`, and it is opt-in and the opposite shape: nothing
+is read off your page, you write the sentence yourself, and a page that passes
+nothing sends nothing. See [Telling it where the person is](#telling-it-where-the-person-is).
 
 Everything else that reaches us is what the person typed and any screenshot they
 chose to share.

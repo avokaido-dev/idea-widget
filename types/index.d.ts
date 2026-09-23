@@ -28,7 +28,51 @@ export interface IdeaWidgetOptions {
   /** `"none"` if your page already has its own button. */
   launcher?: "floating" | "none";
   position?: IdeaWidgetCorner;
+  /**
+   * Where in YOUR app the person is, so the interview does not have to spend
+   * one of its few questions asking what they were doing.
+   *
+   * Pass a FUNCTION. It is read at the moment the box opens, and a value
+   * captured when your app booted describes a screen nobody has looked at
+   * since. An object is flattened to `key: value · key: value`; empty and
+   * nullish values are dropped.
+   *
+   * Nothing is read off your page — the widget never sends your URL's path,
+   * only its origin. This is the one thing about where somebody is that ever
+   * leaves your app, and it says exactly what you write here. So write a
+   * SCREEN, not a record: "Calendar, week view, no sessions this week", never
+   * a customer's name, an id or anything you would not put in another
+   * company's database.
+   *
+   * It is cleaned and cut to a couple of hundred characters on arrival, and
+   * the interview is told it is a description and never an instruction.
+   *
+   * @example
+   * createIdeaWidget({
+   *   key: "avk_…",
+   *   context: () => ({
+   *     screen: "Kalender",
+   *     view: "week",
+   *     note: "no sessions this week",
+   *   }),
+   * });
+   */
+  context?: IdeaWidgetContext | (() => IdeaWidgetContext);
 }
+
+/**
+ * What {@link IdeaWidgetOptions.context} may be. An object is flattened to
+ * `key: value · key: value`, an array to its parts, and anything that cannot
+ * be written down (a function, a symbol) to nothing.
+ */
+export type IdeaWidgetContext =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | readonly IdeaWidgetContext[]
+  | { readonly [key: string]: IdeaWidgetContext };
 
 export interface IdeaWidget {
   /** Opens the dock. Mounts on first call. */
@@ -45,6 +89,14 @@ export interface IdeaWidget {
 export declare function createIdeaWidget(
   options: IdeaWidgetOptions,
 ): IdeaWidget;
+
+/**
+ * Flattens a {@link IdeaWidgetContext} the way the widget does.
+ *
+ * INTERNAL, and exported only so it can be tested without a DOM. It is not
+ * part of what this package promises and may change shape in a patch release.
+ */
+export declare function flattenContext(value: unknown): string;
 
 declare global {
   interface Window {

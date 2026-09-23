@@ -40,6 +40,26 @@ if (script) {
       label: script.getAttribute("data-label") || undefined,
       launcher: script.getAttribute("data-launcher") || undefined,
       position: script.getAttribute("data-position") || undefined,
+      // READ ON EVERY OPEN, WHICH IS THE WHOLE REASON IT IS A FUNCTION. Every
+      // other attribute here is read once, because none of them changes: the
+      // key, the origin and the corner are the same on every screen of the
+      // app. Where somebody is standing is the opposite — it is different on
+      // every screen, and an attribute read once at load would describe the
+      // page the app booted on forever.
+      //
+      // AN ATTRIBUTE AT ALL, rather than options-only, so the two integrations
+      // that cannot pass a function can still use this: a plain `<script>` tag,
+      // and the Dart wrapper, which mounts through one. Both set the attribute
+      // as the person navigates:
+      //
+      //   document.getElementById("avokaido-idea-widget")
+      //     .setAttribute("data-context", "Calendar, week view");
+      //
+      // A page that never sets it sends nothing, which is the default and the
+      // behaviour every existing embed keeps.
+      context: function () {
+        return script.getAttribute("data-context") || "";
+      },
     });
 
     // The other way in, for a page that already has its own button.
