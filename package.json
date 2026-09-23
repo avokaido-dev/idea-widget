@@ -1,6 +1,6 @@
 {
   "name": "avokaido-idea-widget",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Embeddable suggestion widget \u2014 one script tag opens a hosted interview that turns \"this is wrong, look\" into a feature request your team can act on.",
   "license": "MIT",
   "type": "module",

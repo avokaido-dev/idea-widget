@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.4.0
+
+The launcher is Avokaido green — `#2f6b3b` rather than `#1f7a4d`, and
+`#24552e` on hover.
+
+It is the same green as the interview that opens out of it. Those were two
+different greens, which nobody sees side by side, because the button is behind
+the box it opens — but they are seen about four hundred milliseconds apart,
+and that is close enough to notice. The close button's greys move onto the
+same scale for the same reason.
+
+Nothing else changes: same size, same shape, same shadow, same position, same
+API, and nothing new leaves your page. If you have overridden the launcher's
+colour from your own stylesheet you are unaffected — the widget draws inside a
+shadow root and your override was never reaching it anyway; if you want a
+different colour, that is still a feature request.
+
 ## 1.3.0
 
 The widget now sends the page's **route** — `location.pathname` plus the hash,
