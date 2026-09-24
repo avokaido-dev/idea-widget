@@ -417,3 +417,10 @@ describe("how people open it", () => {
     assert.match(tag, /window\.avokaido\.isShown = widget\.isShown/);
   });
 });
+
+describe("an app that knows the visitor before the widget loads", () => {
+  const tag = readFileSync(join(root, "src/script-tag.js"), "utf8");
+  it("picks up window.avokaido.user, after the tag's own attributes", () => {
+    assert.match(tag, /userFrom\(script\) \|\|\s*\(window\.avokaido && typeof window\.avokaido\.user === "object"/);
+  });
+});

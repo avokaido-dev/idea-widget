@@ -169,6 +169,18 @@ window.avokaido.identify({ id: "42", email: "anna@acme.com", traits: { role: "ad
 window.avokaido.identify(null);
 ```
 
+If your app may know the visitor before the widget's deferred script has
+loaded, use a helper that works either way — it calls `identify()` once the
+widget is there, and otherwise leaves the visitor where the widget picks it up
+when it starts:
+
+```js
+export function identifyForAvokaido(user) {
+  if (window.avokaido?.identify) window.avokaido.identify(user);
+  else window.avokaido = { ...(window.avokaido || {}), user };
+}
+```
+
 Changing the `data-user-*` attributes later works too, which is what the Dart
 wrapper does. With the package, pass `user` to `createIdeaWidget` or call
 `widget.identify()`.

@@ -50,7 +50,15 @@ if (script) {
   } else {
     var widget = createIdeaWidget({
       key: key,
-      user: userFrom(script),
+      // THE TAG FIRST, THEN THE SLOT. An app that learned who is signed in
+      // before this deferred script ran cannot call identify() yet, so it may
+      // leave the visitor at `window.avokaido.user` instead — see "Choosing
+      // who sees it" in the README for the three-line helper that does this.
+      user:
+        userFrom(script) ||
+        (window.avokaido && typeof window.avokaido.user === "object"
+          ? window.avokaido.user
+          : null),
       // WHERE THE INTERVIEW LIVES, and the default is deliberately the origin
       // this file was served from: an embed on a preview channel then frames
       // the preview and one on production frames production, which is the case
