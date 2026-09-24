@@ -25,8 +25,12 @@ export interface IdeaWidgetOptions {
   origin?: string;
   /** Launcher text and the iframe's accessible title. */
   label?: string;
-  /** `"none"` if your page already has its own button. */
-  launcher?: "floating" | "none";
+  /**
+   * `"floating"` (the labelled pill), `"icon"` (a round lightbulb), or
+   * `"none"` if your page has its own button — open it with
+   * {@link IdeaWidget.open} and hide that button on `avokaido:visibility`.
+   */
+  launcher?: "floating" | "icon" | "none";
   position?: IdeaWidgetCorner;
   /**
    * Where in YOUR app the person is, so the interview does not have to spend
@@ -72,6 +76,32 @@ export interface IdeaWidgetOptions {
    * for. Turn it off and the origin still arrives; only the screen is lost.
    */
   route?: boolean;
+  /**
+   * Who is looking at your page. Only needed for a link whose admin chose who
+   * sees the button (signed-in visitors, certain addresses, certain traits);
+   * a link open to everybody ignores it.
+   *
+   * Sent to Avokaido to be compared with the link's rules and dropped — never
+   * stored. It is VISIBILITY, NOT ACCESS CONTROL: your page describes its own
+   * visitor, so treat it as choosing who sees the button, not as a lock.
+   *
+   * Learn it after boot? Leave this out and call {@link IdeaWidget.identify}.
+   */
+  user?: IdeaWidgetUser | null;
+}
+
+/** A visitor, as your page describes them. */
+export interface IdeaWidgetUser {
+  id?: string | number;
+  email?: string;
+  /** Matched case-insensitively; a list matches if any value does. */
+  traits?: {
+    readonly [key: string]:
+      | string
+      | number
+      | boolean
+      | readonly (string | number | boolean)[];
+  };
 }
 
 /**
@@ -98,6 +128,13 @@ export interface IdeaWidget {
    * component holding it unmounts.
    */
   destroy(): void;
+  /**
+   * Says who is looking, or that nobody is (`null`), and re-decides whether
+   * the button shows. For an app that signs somebody in after boot.
+   */
+  identify(user: IdeaWidgetUser | null): void;
+  /** Whether the button would show for this visitor on this page right now. */
+  isShown(): boolean;
 }
 
 export declare function createIdeaWidget(
@@ -123,17 +160,32 @@ export declare function routeOf(
   loc: { pathname?: string | null; hash?: string | null } | null | undefined,
 ): string;
 
+/**
+ * Whether a location is on one of a link's pages. `*` matches anything; a
+ * pattern without `#` ignores the hash.
+ *
+ * INTERNAL, and exported only so it can be tested without a DOM. It is not
+ * part of what this package promises and may change shape in a patch release.
+ */
+export declare function matchesPath(
+  patterns: readonly string[] | null | undefined,
+  loc: { pathname?: string | null; hash?: string | null } | null | undefined,
+): boolean;
+
 declare global {
   interface Window {
     avokaido?: {
       openIdeas?: () => void;
       closeIdeas?: () => void;
       destroyIdeas?: () => void;
+      identify?: (user: IdeaWidgetUser | null) => void;
+      isShown?: () => boolean;
     };
   }
   interface DocumentEventMap {
     "avokaido:ready": CustomEvent<Record<string, never>>;
     "avokaido:submitted": CustomEvent<Record<string, never>>;
     "avokaido:closed": CustomEvent<{ reason: IdeaWidgetCloseReason }>;
+    "avokaido:visibility": CustomEvent<{ shown: boolean }>;
   }
 }

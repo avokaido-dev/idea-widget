@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.5.0
+
+A link can now choose **who sees the button**: signed-in visitors only,
+certain addresses or `@domains`, visitors with certain traits
+(`role = admin, owner`), and certain pages (`/settings*`). Set it per link in
+Feature ideas; tell the widget who is looking with `data-user-id`,
+`data-user-email` and `data-user-traits`, or `avokaido.identify()`. See
+"Choosing who sees it" in the README.
+
+The launcher now waits for the link to answer before it appears — one cached
+request per page view, and a second only for a link with people rules. It
+stays hidden if the link is switched off, is embedded on an origin its list
+does not allow, or cannot be reached. `openIdeas()` follows the same answer.
+
+It is visibility, not access control, and is documented as such.
+
+Also new: `data-launcher="icon"`, a round lightbulb in place of the labelled
+pill; and, for a page that opens the dock from its own menu item, an
+`avokaido:visibility` event and `avokaido.isShown()` saying when that item
+should show.
+
 ## 1.4.0
 
 The launcher is Avokaido green — `#2f6b3b` rather than `#1f7a4d`, and
