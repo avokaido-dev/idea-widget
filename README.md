@@ -137,6 +137,64 @@ only one copy of the widget:
 await AvokaidoIdeas.install(key: 'avk_YOUR_KEY');
 ```
 
+## Choosing who sees it
+
+Each link can limit **who the button is shown to**, in **Feature ideas → Embed
+the suggestion widget → (globe icon)**. Any rule you set must hold; leave them
+all empty and everybody sees it, which is how every link starts.
+
+| Rule | Example | Needs your page to say who is looking |
+|---|---|---|
+| Signed-in visitors only | — | yes — an id or an email |
+| These people | `anna@acme.com`, `@pilot-customer.io` | yes — an email |
+| Visitors whose traits match | `role = admin, owner` · `plan = pro` | yes — traits |
+| On these pages | `/settings*`, `/app/*`, `/#/admin*` | no |
+
+Tell the widget who is looking with attributes:
+
+```html
+<script src="https://app-avokaido-eu.web.app/widget/v1.js"
+        data-key="avk_YOUR_KEY"
+        data-user-id="42"
+        data-user-email="anna@acme.com"
+        data-user-traits='{"role":"admin","plan":"pro"}'
+        defer></script>
+```
+
+or, when you only learn it after the page loads, from code — and again with
+`null` when they sign out:
+
+```js
+window.avokaido.identify({ id: "42", email: "anna@acme.com", traits: { role: "admin" } });
+window.avokaido.identify(null);
+```
+
+Changing the `data-user-*` attributes later works too, which is what the Dart
+wrapper does. With the package, pass `user` to `createIdeaWidget` or call
+`widget.identify()`.
+
+**The button stays hidden until Avokaido has answered**, so it never flashes in
+front of somebody it was meant to be hidden from — and stays hidden if we cannot
+be reached, since the interview it opens could not load either. `openIdeas()`
+respects the same answer. A switched-off link, or one embedded on an origin its
+list does not allow, now hides the button too, instead of showing one that opens
+onto "No suggestion form here".
+
+**Who is looking is decided on our side; which page is decided on yours.** Your
+list of people is never published in your page source — the widget sends the
+visitor's id, email and traits, they are compared and dropped, never stored or
+logged. Page patterns are handed to the widget and matched in the browser, so
+no path of yours is sent to decide them, and a single-page app can change screen
+without asking again. Traits are matched case-insensitively, and a list
+(`"roles": ["editor", "admin"]`) matches if any value does. `*` in a page
+pattern matches anything; a pattern without `#` ignores the hash.
+
+**This chooses who sees the button. It is not access control.** Your page
+describes its own visitor, so anybody who can edit it — or who posts to the
+interview with the key, which is public — can describe themselves however they
+like. Use it to put the button in front of the right people; do not use it to
+keep anybody out.
+
 ## Configuration
 
 Script tag attributes, and the equivalent options:
@@ -149,6 +207,7 @@ Script tag attributes, and the equivalent options:
 | `data-position` | `position` | `"bottom-right"` | Any of the four corners. An unrecognised value falls back rather than leaving the dock unpositioned. |
 | `data-context` | `context` | none | Where in your app the person is, so the interview need not ask. Re-read on every open — keep it current as they navigate. The option also takes an object or a function; see [Telling it where the person is](#telling-it-where-the-person-is). |
 | `data-route` | `route` | on | Send the page's path and hash, so a suggestion says which screen it is about. The query string is never sent either way. `data-route="off"` for an app whose paths name things that must not leave it; see [What it sends](#what-it-sends). |
+| `data-user-id` · `data-user-email` · `data-user-traits` | `user` | none | Who is looking, for a link limited to certain visitors; traits are JSON. Watched for changes. See [Choosing who sees it](#choosing-who-sees-it). |
 | `data-origin` | `origin` | the script's own origin | Where the interview lives. The script-tag build defaults to the origin it was served from, so an embed served from a preview channel frames the preview. **Set this explicitly if you serve the file from a third-party CDN** (jsDelivr, unpkg) or self-host it — otherwise the widget frames the CDN. |
 
 ## Telling it where the person is
@@ -384,6 +443,12 @@ is lost:
 your page, you write the sentence yourself, and it says more than a path can —
 "Calendar, week view, no sessions this week" against `/#/calendar`. See
 [Telling it where the person is](#telling-it-where-the-person-is).
+
+**Who is looking — only for a link limited to certain visitors**, and only
+what your page chose to say in `data-user-*` or `identify()`. It is compared
+with the link's rules and dropped; see
+[Choosing who sees it](#choosing-who-sees-it). A link open to everybody is asked
+only whether it is switched on, and nothing about the visitor is sent.
 
 Everything else that reaches us is what the person typed and any screenshot they
 chose to share.

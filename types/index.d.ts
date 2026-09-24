@@ -72,6 +72,32 @@ export interface IdeaWidgetOptions {
    * for. Turn it off and the origin still arrives; only the screen is lost.
    */
   route?: boolean;
+  /**
+   * Who is looking at your page. Only needed for a link whose admin chose who
+   * sees the button (signed-in visitors, certain addresses, certain traits);
+   * a link open to everybody ignores it.
+   *
+   * Sent to Avokaido to be compared with the link's rules and dropped — never
+   * stored. It is VISIBILITY, NOT ACCESS CONTROL: your page describes its own
+   * visitor, so treat it as choosing who sees the button, not as a lock.
+   *
+   * Learn it after boot? Leave this out and call {@link IdeaWidget.identify}.
+   */
+  user?: IdeaWidgetUser | null;
+}
+
+/** A visitor, as your page describes them. */
+export interface IdeaWidgetUser {
+  id?: string | number;
+  email?: string;
+  /** Matched case-insensitively; a list matches if any value does. */
+  traits?: {
+    readonly [key: string]:
+      | string
+      | number
+      | boolean
+      | readonly (string | number | boolean)[];
+  };
 }
 
 /**
@@ -98,6 +124,11 @@ export interface IdeaWidget {
    * component holding it unmounts.
    */
   destroy(): void;
+  /**
+   * Says who is looking, or that nobody is (`null`), and re-decides whether
+   * the button shows. For an app that signs somebody in after boot.
+   */
+  identify(user: IdeaWidgetUser | null): void;
 }
 
 export declare function createIdeaWidget(
@@ -123,12 +154,25 @@ export declare function routeOf(
   loc: { pathname?: string | null; hash?: string | null } | null | undefined,
 ): string;
 
+/**
+ * Whether a location is on one of a link's pages. `*` matches anything; a
+ * pattern without `#` ignores the hash.
+ *
+ * INTERNAL, and exported only so it can be tested without a DOM. It is not
+ * part of what this package promises and may change shape in a patch release.
+ */
+export declare function matchesPath(
+  patterns: readonly string[] | null | undefined,
+  loc: { pathname?: string | null; hash?: string | null } | null | undefined,
+): boolean;
+
 declare global {
   interface Window {
     avokaido?: {
       openIdeas?: () => void;
       closeIdeas?: () => void;
       destroyIdeas?: () => void;
+      identify?: (user: IdeaWidgetUser | null) => void;
     };
   }
   interface DocumentEventMap {

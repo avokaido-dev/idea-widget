@@ -13,7 +13,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { dirname, join } from "node:path";
-import { flattenContext, routeOf } from "../src/widget.js";
+import { flattenContext, matchesPath, routeOf } from "../src/widget.js";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -339,5 +339,65 @@ describe("teardown", () => {
 
   it("takes the host element with it", () => {
     assert.match(core, /if \(host\) host\.remove\(\);/);
+  });
+});
+
+describe("who sees the button", () => {
+  const at = (pathname, hash = "") => ({ pathname, hash });
+  const tag = readFileSync(join(root, "src/script-tag.js"), "utf8");
+
+  it("shows everywhere when a link names no pages", () => {
+    assert.equal(matchesPath([], at("/anything")), true);
+    assert.equal(matchesPath(undefined, at("/anything")), true);
+  });
+
+  it("matches a page exactly, ignoring a trailing slash and the hash", () => {
+    assert.equal(matchesPath(["/settings"], at("/settings/")), true);
+    assert.equal(matchesPath(["/settings/"], at("/settings", "#billing")), true);
+    assert.equal(matchesPath(["/settings"], at("/settings/team")), false);
+  });
+
+  it("lets * stand for anything, slashes included", () => {
+    assert.equal(matchesPath(["/app/*"], at("/app/a/b")), true);
+    assert.equal(matchesPath(["/app/*"], at("/apple")), false);
+    assert.equal(matchesPath(["/*"], at("/x")), true);
+  });
+
+  it("matches the hash only when the pattern has one", () => {
+    assert.equal(matchesPath(["/#/admin*"], at("/", "#/admin/users")), true);
+    assert.equal(matchesPath(["/#/admin*"], at("/", "#/calendar")), false);
+  });
+
+  it("never matches on the query string", () => {
+    assert.equal(matchesPath(["/a"], at("/a", "#/x?role=admin")), true);
+    assert.equal(matchesPath(["*role=admin*"], at("/a", "#/x?role=admin")), false);
+  });
+
+  it("treats regex characters in a pattern as literal", () => {
+    assert.equal(matchesPath(["/a.b"], at("/axb")), false);
+    assert.equal(matchesPath(["/a.b"], at("/a.b")), true);
+  });
+
+  it("draws the launcher hidden until the link has answered", () => {
+    assert.match(core, /button\.hidden = !allowed\(\)/);
+    assert.match(core, /\.launcher\[hidden\] \{ display: none !important \}/);
+  });
+
+  it("stays hidden when the link cannot be reached", () => {
+    assert.match(core, /\.catch\(function \(\) \{ done\(false\); \}\)/);
+  });
+
+  it("cannot go out ahead of its backend and hide every button", () => {
+    assert.match(core, /r\.status === 404\) return \{ show: true, paths: \[\], visitor: false \}/);
+  });
+
+  it("never puts the visitor in a URL", () => {
+    assert.equal(/encodeURIComponent\(user/.test(core), false);
+    assert.match(core, /method: "POST"[\s\S]{0,200}body: JSON\.stringify\(\{\s*visitor/);
+  });
+
+  it("follows identity set by attribute, for the Dart wrapper", () => {
+    assert.match(tag, /attributeFilter: \["data-user-id", "data-user-email", "data-user-traits"\]/);
+    assert.match(tag, /window\.avokaido\.identify = widget\.identify/);
   });
 });

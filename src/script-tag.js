@@ -14,6 +14,32 @@ import { createIdeaWidget } from "./widget.js";
 /** What `data-route` may say to switch the route off. */
 var ROUTE_OFF = ["off", "false", "no", "0"];
 
+/**
+ * The visitor, as the tag's `data-user-*` attributes describe them, or null.
+ *
+ *   <script … data-user-id="42" data-user-email="anna@acme.com"
+ *           data-user-traits='{"role":"admin","plan":"pro"}'>
+ *
+ * Only needed for a link whose admin chose who sees the button. Traits are
+ * JSON; a value that does not parse is reported and ignored rather than
+ * hiding the button over a quoting mistake nobody can see.
+ */
+function userFrom(el) {
+  var id = el.getAttribute("data-user-id") || "";
+  var email = el.getAttribute("data-user-email") || "";
+  var rawTraits = el.getAttribute("data-user-traits");
+  var traits = {};
+  if (rawTraits) {
+    try {
+      var parsed = JSON.parse(rawTraits);
+      if (parsed && typeof parsed === "object") traits = parsed;
+    } catch (err) {
+      console.warn("[avokaido] data-user-traits is not JSON; ignoring it");
+    }
+  }
+  return id || email || rawTraits ? { id: id, email: email, traits: traits } : null;
+}
+
 var script = document.currentScript;
 if (script) {
   var key = (script.getAttribute("data-key") || "").trim();
@@ -24,6 +50,7 @@ if (script) {
   } else {
     var widget = createIdeaWidget({
       key: key,
+      user: userFrom(script),
       // WHERE THE INTERVIEW LIVES, and the default is deliberately the origin
       // this file was served from: an embed on a preview channel then frames
       // the preview and one on production frames production, which is the case
@@ -84,5 +111,20 @@ if (script) {
       widget.close("api");
     };
     window.avokaido.destroyIdeas = widget.destroy;
+    // Who is looking, for an app that signs somebody in after load.
+    window.avokaido.identify = widget.identify;
+
+    // THE SAME THING BY ATTRIBUTE, for the integrations that cannot call a
+    // function — the Dart wrapper mounts through this tag and sets attributes
+    // as somebody signs in and out, exactly as it does for data-context.
+    if (typeof MutationObserver !== "undefined") {
+      var tag = script;
+      new MutationObserver(function () {
+        widget.identify(userFrom(tag));
+      }).observe(tag, {
+        attributes: true,
+        attributeFilter: ["data-user-id", "data-user-email", "data-user-traits"],
+      });
+    }
   }
 }

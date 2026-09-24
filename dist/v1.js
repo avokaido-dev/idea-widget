@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.4.0 — one script tag on your page.
+ * Avokaido idea widget 1.5.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -86,6 +86,10 @@ const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  *        The query is never sent either way, which is where `?token=` and
  *        `?email=` live; a path segment like `/patients/4821` is not, and that
  *        is the case this switch is for.
+ * @param {{id?: string|number, email?: string, traits?: Object}} [options.user]
+ *        Who is looking at your page, for a link whose admin chose who sees the
+ *        button. Only needed then; call `identify()` later if you learn it
+ *        after boot. Sent to Avokaido to be compared and dropped, never stored.
  */
 /**
  * The longest context this will put in a URL.
@@ -133,6 +137,51 @@ function routeOf(loc) {
   var route = path + hash;
   if (route.charAt(0) !== "/") return "";
   return route.slice(0, MAX_ROUTE);
+}
+
+/**
+ * Whether a location is on one of a link's pages.
+ *
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE, like `routeOf`, which it reads
+ * through — so the query string is never part of the match, on the path or in
+ * the hash, exactly as it is never part of what is sent.
+ *
+ * DECIDED HERE, NOT ON THE SERVER. The patterns are the customer's own routes
+ * and already public; matching them on the page means no path of anybody's
+ * page is sent anywhere, and a single-page app can move between screens
+ * without asking again.
+ *
+ * `*` matches anything, `/` included. A pattern without `#` is matched against
+ * the path alone, so `/settings` still matches `/settings#billing`; one with a
+ * `#` is matched against path and hash, for an app on hash routing. Trailing
+ * slashes do not count. No patterns means every page.
+ */
+function matchesPath(patterns, loc) {
+  if (!patterns || patterns.length === 0) return true;
+  var route = routeOf(loc);
+  if (!route) return false;
+  var bare = function (p) {
+    return p.length > 1 ? p.replace(/\/+$/, "") || "/" : p;
+  };
+  var path = bare(route.split("#")[0]);
+  var withHash = route.indexOf("#") < 0 ? path : path + "#" + route.split("#")[1];
+  for (var i = 0; i < patterns.length; i++) {
+    var pattern = bare(String(patterns[i] || ""));
+    if (pattern.charAt(0) !== "/") continue;
+    var subject = pattern.indexOf("#") < 0 ? path : bare(withHash);
+    var re = new RegExp(
+      "^" +
+        pattern
+          .split("*")
+          .map(function (part) {
+            return part.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+          })
+          .join(".*") +
+        "$",
+    );
+    if (re.test(subject)) return true;
+  }
+  return false;
 }
 
 /**
@@ -265,6 +314,144 @@ function createIdeaWidget(options) {
     return url;
   }
 
+  /**
+   * WHO SEES THE BUTTON, decided before it is drawn.
+   *
+   * A link's admin can limit the launcher to signed-in visitors, to certain
+   * addresses, to visitors with certain traits, and to certain pages. The
+   * first three are decided by Avokaido, so a customer's list of people is
+   * never published in their page source; pages are decided here, from
+   * patterns the server hands over — see `matchesPath`.
+   *
+   * VISIBILITY, NOT ACCESS CONTROL. The page describes its own visitor, so
+   * anybody who can edit it can describe themselves however they like. This
+   * is for putting the button in front of the right people, and it says so
+   * everywhere it is configured.
+   *
+   * HIDDEN UNTIL ANSWERED, and hidden if the answer never comes. A launcher
+   * that flashes in front of somebody it was meant to be hidden from is the
+   * bug this exists to prevent, and if Avokaido cannot be reached the
+   * interview it opens could not load either.
+   */
+  var user = opts.user || null;
+  var rules = null; // { paths, visitor } once the link has answered
+  var admitted = false; // the server-decided half
+  var onPage = false; // the path half
+  var decided = false;
+  var waiting = []; // open() calls made before the answer
+  var checkSeq = 0;
+  var destroyed = false;
+
+  function allowed() {
+    return decided && admitted && onPage;
+  }
+
+  function hasUser() {
+    return Boolean(
+      user && ((user.id != null && user.id !== "") || user.email),
+    );
+  }
+
+  function settle() {
+    onPage = rules ? matchesPath(rules.paths, location) : false;
+    var launcherEl = root && root.querySelector(".launcher");
+    if (launcherEl) launcherEl.hidden = !allowed();
+    if (!decided) return;
+    var queued = waiting;
+    waiting = [];
+    for (var i = 0; i < queued.length; i++) queued[i]();
+  }
+
+  function audienceUrl() {
+    return origin + "/api/idea/audience/" + encodeURIComponent(key);
+  }
+
+  /** Asks the server-decided half again — at boot, and on every identify(). */
+  function checkVisitor() {
+    if (destroyed) return;
+    var seq = ++checkSeq;
+    var done = function (ok) {
+      if (seq !== checkSeq) return; // a later identify() has the floor
+      admitted = ok;
+      decided = true;
+      settle();
+    };
+    if (!rules || !rules.visitor) return done(Boolean(rules));
+    // No visitor named, and every people rule needs one: no need to ask.
+    if (!hasUser()) return done(false);
+    fetch(audienceUrl(), {
+      method: "POST",
+      credentials: "omit",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        visitor: {
+          id: user.id == null ? "" : String(user.id),
+          email: user.email || "",
+          traits: user.traits || {},
+        },
+      }),
+    })
+      .then(function (r) { return r.ok ? r.json() : { show: false }; })
+      .then(function (body) { done(Boolean(body && body.show)); })
+      .catch(function () { done(false); });
+  }
+
+  fetch(audienceUrl(), { credentials: "omit" })
+    .then(function (r) {
+      // A 404 is a backend older than this file, not a refusal: the route
+      // answers 200 for every key it knows about and every key it does not.
+      // Shown as every widget before 1.5 did, so this build can never go out
+      // ahead of its backend and take the button off every customer's page.
+      if (r.status === 404) return { show: true, paths: [], visitor: false };
+      return r.ok ? r.json() : { show: false };
+    })
+    .then(function (body) {
+      if (!body || !body.show) {
+        rules = null;
+        admitted = false;
+        decided = true;
+        settle();
+        return;
+      }
+      rules = {
+        paths: Array.isArray(body.paths) ? body.paths : [],
+        visitor: Boolean(body.visitor),
+      };
+      if (rules.paths.length > 0) watchRoute();
+      checkVisitor();
+    })
+    .catch(function () {
+      decided = true;
+      settle();
+    });
+
+  /**
+   * Re-decides the page half when a single-page app changes screen.
+   *
+   * A light poll alongside the events rather than patching `history`, because
+   * wrapping another application's `pushState` is the kind of reach into the
+   * host page this widget is written never to make. Only runs for a link with
+   * page rules.
+   */
+  function watchRoute() {
+    if (destroyed) return;
+    var last = routeOf(location);
+    var tick = function () {
+      var now = routeOf(location);
+      if (now === last) return;
+      last = now;
+      settle();
+    };
+    var timer = setInterval(tick, 500);
+    window.addEventListener("popstate", tick);
+    window.addEventListener("hashchange", tick);
+    teardown.push(function () {
+      clearInterval(timer);
+      window.removeEventListener("popstate", tick);
+      window.removeEventListener("hashchange", tick);
+    });
+  }
+
   /** Everything this instance attached to the page, for destroy(). */
   var teardown = [];
   var host = null; // the element holding the shadow root
@@ -291,6 +478,9 @@ function createIdeaWidget(options) {
       /* Nothing here cascades out of the shadow root, and nothing cascades in
          except inherited properties — which is why font-family is stated. */
       ":host { all: initial }",
+      /* `hidden` loses to any `display` rule, and the launcher has one. Stated
+         so the audience gate can hide it without knowing its layout. */
+      ".launcher[hidden] { display: none !important }",
       ".launcher {",
       "  position: fixed; z-index: 1;",
       "  display: inline-flex; align-items: center; gap: 8px;",
@@ -383,6 +573,18 @@ function createIdeaWidget(options) {
   }
 
   function open() {
+    // Waits for the answer rather than racing it, so an app that calls
+    // `openIdeas()` from its own button at boot still gets the box.
+    if (!decided) {
+      waiting.push(open);
+      return;
+    }
+    if (!allowed()) {
+      if (typeof console !== "undefined" && console.info) {
+        console.info("[avokaido] this link is not shown to this visitor here");
+      }
+      return;
+    }
     mount();
     if (overlay) return;
     lastFocus = document.activeElement;
@@ -747,6 +949,7 @@ function createIdeaWidget(options) {
       var button = document.createElement("button");
       button.type = "button";
       button.className = "launcher " + corner;
+      button.hidden = !allowed();
       button.textContent = label;
       button.addEventListener("click", function () {
         open();
@@ -772,6 +975,8 @@ function createIdeaWidget(options) {
    * fighting the host application.
    */
   function destroy() {
+    destroyed = true;
+    waiting = [];
     close("api");
     for (var i = 0; i < teardown.length; i++) teardown[i]();
     teardown = [];
@@ -788,6 +993,14 @@ function createIdeaWidget(options) {
       close(reason || "api");
     },
     destroy: destroy,
+    /**
+     * Says who is looking, or that nobody is (`null`). For an app that signs
+     * somebody in after the widget booted, and for signing them out again.
+     */
+    identify: function (next) {
+      user = next || null;
+      if (rules) checkVisitor();
+    },
   };
 }
 
@@ -807,6 +1020,32 @@ function createIdeaWidget(options) {
 /** What `data-route` may say to switch the route off. */
 var ROUTE_OFF = ["off", "false", "no", "0"];
 
+/**
+ * The visitor, as the tag's `data-user-*` attributes describe them, or null.
+ *
+ *   <script … data-user-id="42" data-user-email="anna@acme.com"
+ *           data-user-traits='{"role":"admin","plan":"pro"}'>
+ *
+ * Only needed for a link whose admin chose who sees the button. Traits are
+ * JSON; a value that does not parse is reported and ignored rather than
+ * hiding the button over a quoting mistake nobody can see.
+ */
+function userFrom(el) {
+  var id = el.getAttribute("data-user-id") || "";
+  var email = el.getAttribute("data-user-email") || "";
+  var rawTraits = el.getAttribute("data-user-traits");
+  var traits = {};
+  if (rawTraits) {
+    try {
+      var parsed = JSON.parse(rawTraits);
+      if (parsed && typeof parsed === "object") traits = parsed;
+    } catch (err) {
+      console.warn("[avokaido] data-user-traits is not JSON; ignoring it");
+    }
+  }
+  return id || email || rawTraits ? { id: id, email: email, traits: traits } : null;
+}
+
 var script = document.currentScript;
 if (script) {
   var key = (script.getAttribute("data-key") || "").trim();
@@ -817,6 +1056,7 @@ if (script) {
   } else {
     var widget = createIdeaWidget({
       key: key,
+      user: userFrom(script),
       // WHERE THE INTERVIEW LIVES, and the default is deliberately the origin
       // this file was served from: an embed on a preview channel then frames
       // the preview and one on production frames production, which is the case
@@ -877,6 +1117,21 @@ if (script) {
       widget.close("api");
     };
     window.avokaido.destroyIdeas = widget.destroy;
+    // Who is looking, for an app that signs somebody in after load.
+    window.avokaido.identify = widget.identify;
+
+    // THE SAME THING BY ATTRIBUTE, for the integrations that cannot call a
+    // function — the Dart wrapper mounts through this tag and sets attributes
+    // as somebody signs in and out, exactly as it does for data-context.
+    if (typeof MutationObserver !== "undefined") {
+      var tag = script;
+      new MutationObserver(function () {
+        widget.identify(userFrom(tag));
+      }).observe(tag, {
+        attributes: true,
+        attributeFilter: ["data-user-id", "data-user-email", "data-user-traits"],
+      });
+    }
   }
 }
 
