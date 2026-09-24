@@ -409,6 +409,7 @@ describe("how people open it", () => {
     assert.match(core, /launcher === "icon" \? " icon" : ""/);
     assert.match(core, /button\.setAttribute\("aria-label", label\)/);
     assert.match(core, /\.launcher\.icon \{ width: 48px; height: 48px/);
+    assert.match(core, /box-shadow: 0 0 0 2px #fff/);
   });
 
   it("tells a page with its own menu item when to show it", () => {

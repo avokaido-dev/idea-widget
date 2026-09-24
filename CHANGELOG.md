@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1
+
+The round icon launcher (`data-launcher="icon"`) has a thin white ring. A
+green circle has no edge of its own, and on a dark or green page — a sidebar,
+a hero image — it all but disappeared. Nothing else changes.
+
 ## 1.5.0
 
 A link can now choose **who sees the button**: signed-in visitors only,

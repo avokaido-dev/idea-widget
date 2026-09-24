@@ -502,7 +502,12 @@ export function createIdeaWidget(options) {
       /* The round variant: the same button with the label moved to its
          accessible name, for an app whose corner has no room for words. */
       ".launcher.icon { width: 48px; height: 48px; padding: 0;",
-      "  justify-content: center }",
+      "  justify-content: center;",
+      /* A WHITE RING, because a round green button has no edge of its own:
+         on a dark or green page — a sidebar, a hero — it disappeared. The
+         ring gives it one on any ground, light or dark. */
+      "  box-shadow: 0 0 0 2px #fff, 0 2px 6px rgba(0,0,0,.18),",
+      "    0 8px 24px rgba(0,0,0,.14) }",
       ".launcher.icon svg { width: 22px; height: 22px; display: block }",
       ".launcher:focus-visible { outline: 2px solid #2f6b3b; outline-offset: 3px }",
       ".bottom-right { right: 20px; bottom: 20px }",
