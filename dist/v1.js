@@ -64,7 +64,11 @@ const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  * @param {string} options.key            required — the `avk_…` link key
  * @param {string} [options.origin]       where the interview is hosted
  * @param {string} [options.label]        launcher text and iframe title
- * @param {"floating"|"none"} [options.launcher]
+ * @param {"floating"|"icon"|"none"} [options.launcher]
+ *        `"floating"` is the labelled pill, `"icon"` a round lightbulb in the
+ *        same corner, `"none"` no button at all — open it from your own menu
+ *        with `open()`, and listen for `avokaido:visibility` to know whether
+ *        to show that menu item.
  * @param {"bottom-right"|"bottom-left"|"top-right"|"top-left"} [options.position]
  * @param {string|Object|Function} [options.context]
  *        Where in YOUR app the person is, so the interview does not have to
@@ -352,8 +356,22 @@ function createIdeaWidget(options) {
     );
   }
 
+  var announced = null; // the last visibility told to the page
+
   function settle() {
     onPage = rules ? matchesPath(rules.paths, location) : false;
+    // TOLD TO THE PAGE, so a host app that draws its own menu item for this
+    // (`launcher: "none"`) can hide it exactly when our button would be
+    // hidden — otherwise it would offer a button that does nothing. Fired on
+    // every change and once when first decided, never before.
+    if (decided && announced !== allowed()) {
+      announced = allowed();
+      document.dispatchEvent(
+        new CustomEvent("avokaido:visibility", {
+          detail: { shown: announced },
+        }),
+      );
+    }
     var launcherEl = root && root.querySelector(".launcher");
     if (launcherEl) launcherEl.hidden = !allowed();
     if (!decided) return;
@@ -497,6 +515,11 @@ function createIdeaWidget(options) {
       "  box-shadow: 0 2px 6px rgba(0,0,0,.18), 0 8px 24px rgba(0,0,0,.14);",
       "}",
       ".launcher:hover { background: #24552e }",
+      /* The round variant: the same button with the label moved to its
+         accessible name, for an app whose corner has no room for words. */
+      ".launcher.icon { width: 48px; height: 48px; padding: 0;",
+      "  justify-content: center }",
+      ".launcher.icon svg { width: 22px; height: 22px; display: block }",
       ".launcher:focus-visible { outline: 2px solid #2f6b3b; outline-offset: 3px }",
       ".bottom-right { right: 20px; bottom: 20px }",
       ".bottom-left  { left: 20px;  bottom: 20px }",
@@ -948,9 +971,22 @@ function createIdeaWidget(options) {
       mount();
       var button = document.createElement("button");
       button.type = "button";
-      button.className = "launcher " + corner;
+      button.className = "launcher " + corner + (launcher === "icon" ? " icon" : "");
       button.hidden = !allowed();
-      button.textContent = label;
+      if (launcher === "icon") {
+        button.setAttribute("aria-label", label);
+        button.title = label;
+        // A lightbulb, drawn inline: no icon font or image request on
+        // somebody else's page.
+        button.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+          'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
+          'aria-hidden="true"><path d="M9 18h6"/><path d="M10 22h4"/>' +
+          '<path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 ' +
+          '1-2.1A7 7 0 0 0 12 2z"/></svg>';
+      } else {
+        button.textContent = label;
+      }
       button.addEventListener("click", function () {
         open();
       });
@@ -997,6 +1033,11 @@ function createIdeaWidget(options) {
      * Says who is looking, or that nobody is (`null`). For an app that signs
      * somebody in after the widget booted, and for signing them out again.
      */
+    /** Whether the button would show for this visitor on this page right
+     *  now — false until the link has answered. */
+    isShown: function () {
+      return allowed();
+    },
     identify: function (next) {
       user = next || null;
       if (rules) checkVisitor();
@@ -1119,6 +1160,9 @@ if (script) {
     window.avokaido.destroyIdeas = widget.destroy;
     // Who is looking, for an app that signs somebody in after load.
     window.avokaido.identify = widget.identify;
+    // For a page with its own menu item: whether to show it. See also the
+    // `avokaido:visibility` event, which says the same thing when it changes.
+    window.avokaido.isShown = widget.isShown;
 
     // THE SAME THING BY ATTRIBUTE, for the integrations that cannot call a
     // function — the Dart wrapper mounts through this tag and sets attributes

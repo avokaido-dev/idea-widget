@@ -25,8 +25,12 @@ export interface IdeaWidgetOptions {
   origin?: string;
   /** Launcher text and the iframe's accessible title. */
   label?: string;
-  /** `"none"` if your page already has its own button. */
-  launcher?: "floating" | "none";
+  /**
+   * `"floating"` (the labelled pill), `"icon"` (a round lightbulb), or
+   * `"none"` if your page has its own button — open it with
+   * {@link IdeaWidget.open} and hide that button on `avokaido:visibility`.
+   */
+  launcher?: "floating" | "icon" | "none";
   position?: IdeaWidgetCorner;
   /**
    * Where in YOUR app the person is, so the interview does not have to spend
@@ -129,6 +133,8 @@ export interface IdeaWidget {
    * the button shows. For an app that signs somebody in after boot.
    */
   identify(user: IdeaWidgetUser | null): void;
+  /** Whether the button would show for this visitor on this page right now. */
+  isShown(): boolean;
 }
 
 export declare function createIdeaWidget(
@@ -173,11 +179,13 @@ declare global {
       closeIdeas?: () => void;
       destroyIdeas?: () => void;
       identify?: (user: IdeaWidgetUser | null) => void;
+      isShown?: () => boolean;
     };
   }
   interface DocumentEventMap {
     "avokaido:ready": CustomEvent<Record<string, never>>;
     "avokaido:submitted": CustomEvent<Record<string, never>>;
     "avokaido:closed": CustomEvent<{ reason: IdeaWidgetCloseReason }>;
+    "avokaido:visibility": CustomEvent<{ shown: boolean }>;
   }
 }

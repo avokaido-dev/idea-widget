@@ -113,6 +113,9 @@ if (script) {
     window.avokaido.destroyIdeas = widget.destroy;
     // Who is looking, for an app that signs somebody in after load.
     window.avokaido.identify = widget.identify;
+    // For a page with its own menu item: whether to show it. See also the
+    // `avokaido:visibility` event, which says the same thing when it changes.
+    window.avokaido.isShown = widget.isShown;
 
     // THE SAME THING BY ATTRIBUTE, for the integrations that cannot call a
     // function — the Dart wrapper mounts through this tag and sets attributes

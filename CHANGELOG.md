@@ -16,6 +16,11 @@ does not allow, or cannot be reached. `openIdeas()` follows the same answer.
 
 It is visibility, not access control, and is documented as such.
 
+Also new: `data-launcher="icon"`, a round lightbulb in place of the labelled
+pill; and, for a page that opens the dock from its own menu item, an
+`avokaido:visibility` event and `avokaido.isShown()` saying when that item
+should show.
+
 ## 1.4.0
 
 The launcher is Avokaido green — `#2f6b3b` rather than `#1f7a4d`, and

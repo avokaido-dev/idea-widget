@@ -195,6 +195,26 @@ interview with the key, which is public — can describe themselves however they
 like. Use it to put the button in front of the right people; do not use it to
 keep anybody out.
 
+## Your own menu item, or an icon
+
+Three ways for people to open it, all onto the same dock over your page:
+
+- **The labelled pill** (the default) — `data-launcher` left out.
+- **A round icon** in the same corner — `data-launcher="icon"`. The label
+  becomes its tooltip and accessible name.
+- **A button in your own navigation** — `data-launcher="none"`, and your
+  button calls `window.avokaido.openIdeas()`. If the link limits who sees it,
+  hide your button when the widget says so, or it will offer a button that
+  does nothing:
+
+```js
+document.addEventListener("avokaido:visibility", (e) => {
+  myIdeasButton.hidden = !e.detail.shown;
+});
+// already decided before your code ran?
+myIdeasButton.hidden = !window.avokaido?.isShown?.();
+```
+
 ## Configuration
 
 Script tag attributes, and the equivalent options:
@@ -203,7 +223,7 @@ Script tag attributes, and the equivalent options:
 |---|---|---|---|
 | `data-key` | `key` | — | **Required.** Your `avk_…` link key. |
 | `data-label` | `label` | `"Suggest a change"` | Launcher text, and the iframe's accessible title. |
-| `data-launcher` | `launcher` | `"floating"` | `"none"` if your page already has its own button. |
+| `data-launcher` | `launcher` | `"floating"` | `"icon"` for a round lightbulb, `"none"` if your page has its own button. See [Your own menu item, or an icon](#your-own-menu-item-or-an-icon). |
 | `data-position` | `position` | `"bottom-right"` | Any of the four corners. An unrecognised value falls back rather than leaving the dock unpositioned. |
 | `data-context` | `context` | none | Where in your app the person is, so the interview need not ask. Re-read on every open — keep it current as they navigate. The option also takes an object or a function; see [Telling it where the person is](#telling-it-where-the-person-is). |
 | `data-route` | `route` | on | Send the page's path and hash, so a suggestion says which screen it is about. The query string is never sent either way. `data-route="off"` for an app whose paths name things that must not leave it; see [What it sends](#what-it-sends). |

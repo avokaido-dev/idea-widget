@@ -401,3 +401,19 @@ describe("who sees the button", () => {
     assert.match(tag, /window\.avokaido\.identify = widget\.identify/);
   });
 });
+
+describe("how people open it", () => {
+  const tag = readFileSync(join(root, "src/script-tag.js"), "utf8");
+
+  it("has a round icon launcher whose label is its accessible name", () => {
+    assert.match(core, /launcher === "icon" \? " icon" : ""/);
+    assert.match(core, /button\.setAttribute\("aria-label", label\)/);
+    assert.match(core, /\.launcher\.icon \{ width: 48px; height: 48px/);
+  });
+
+  it("tells a page with its own menu item when to show it", () => {
+    assert.match(core, /new CustomEvent\("avokaido:visibility"/);
+    assert.match(core, /if \(decided && announced !== allowed\(\)\)/);
+    assert.match(tag, /window\.avokaido\.isShown = widget\.isShown/);
+  });
+});
