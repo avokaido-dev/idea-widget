@@ -439,6 +439,13 @@ describe("who sees the button", () => {
     assert.match(core, /method: "POST"[\s\S]{0,200}body: JSON\.stringify\(\{\s*visitor/);
   });
 
+  it("hears a single-page app change screen at once, without patching history", () => {
+    assert.match(core, /nav\.addEventListener\("currententrychange", tick\)/);
+    assert.match(core, /nav\.removeEventListener\("currententrychange", tick\)/);
+    assert.match(core, /setInterval\(tick, 500\)/);
+    assert.equal(/history\.(pushState|replaceState)\s*=/.test(core), false);
+  });
+
   it("follows identity set by attribute, for the Dart wrapper", () => {
     assert.match(tag, /attributeFilter: \["data-user-id", "data-user-email", "data-user-traits"\]/);
     assert.match(tag, /window\.avokaido\.identify = widget\.identify/);
