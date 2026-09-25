@@ -236,7 +236,7 @@ Script tag attributes, and the equivalent options:
 | `data-key` | `key` | — | **Required.** Your `avk_…` link key. |
 | `data-label` | `label` | `"Suggest a change"` | Launcher text, and the iframe's accessible title. |
 | `data-launcher` | `launcher` | `"floating"` | `"icon"` for a round lightbulb, `"none"` if your page has its own button. See [Your own menu item, or an icon](#your-own-menu-item-or-an-icon). |
-| `data-position` | `position` | `"bottom-right"` | Any of the four corners. An unrecognised value falls back rather than leaving the dock unpositioned. |
+| `data-position` | `position` | `"bottom-right"` | Any of the four corners — where the launcher starts, until the person drags it to another. An unrecognised value falls back rather than leaving the dock unpositioned. |
 | `data-context` | `context` | none | Where in your app the person is, so the interview need not ask. Re-read on every open — keep it current as they navigate. The option also takes an object or a function; see [Telling it where the person is](#telling-it-where-the-person-is). |
 | `data-route` | `route` | on | Send the page's path and hash, so a suggestion says which screen it is about. The query string is never sent either way. `data-route="off"` for an app whose paths name things that must not leave it; see [What it sends](#what-it-sends). |
 | `data-user-id` · `data-user-email` · `data-user-traits` | `user` | none | Who is looking, for a link limited to certain visitors; traits are JSON. Watched for changes. See [Choosing who sees it](#choosing-who-sees-it). |
@@ -340,7 +340,7 @@ instrumenting our iframe:
 document.addEventListener("avokaido:ready", () => {});
 document.addEventListener("avokaido:submitted", () => {});
 document.addEventListener("avokaido:closed", (e) => {
-  // e.detail.reason: "button" | "escape" | "page" | "submitted" | "api"
+  // e.detail.reason: "button" | "launcher" | "escape" | "page" | "submitted" | "api"
 });
 ```
 
@@ -382,11 +382,17 @@ on the hosted side.
 - **No backdrop.** A card in the corner, not a lightbox. The page behind stays
   readable, scrollable and clickable while the conversation is open — which is
   what somebody describing a screen actually needs, and the whole advantage over
-  sending them to a link. So Escape and the × are the only exits.
+  sending them to a link. So Escape, the × and the launcher itself are the
+  only exits — pressing the launcher again puts the box away.
 - **It can be moved.** A corner is still *somewhere*, and on a page with a
   left-hand nav the left corner is over the nav. There is an invisible drag grip
   along the dock's title row; the position is remembered per browser and
   re-clamped on drop, on open, and on window resize.
+- **So can the launcher**, to any of the four corners. Hold it and drag; let go
+  and it glides to the nearest corner, 24px in from both edges, and the dock
+  follows it there. A press that barely moves is still a press. The corner is
+  remembered per browser and wins over `data-position`, which is only where it
+  starts.
 - **384×588**, clamped to the viewport, full-screen under 560px.
 - **One global**, `window.avokaido`. One `<div>`. Three window listeners, all
   removed by `destroy()`.

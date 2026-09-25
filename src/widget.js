@@ -497,18 +497,28 @@ export function createIdeaWidget(options) {
          close enough. */
       "  color: #fff; background: #2f6b3b; cursor: pointer;",
       "  box-shadow: 0 2px 6px rgba(0,0,0,.18), 0 8px 24px rgba(0,0,0,.14);",
+      /* DRAGGABLE, so a finger on it moves it rather than scrolling the page,
+         and holding it neither selects text nor opens the phone's callout. */
+      "  touch-action: none; user-select: none; -webkit-user-select: none;",
+      "  -webkit-touch-callout: none;",
       "}",
       ".launcher:hover { background: #24552e }",
+      /* Picked up: over the dock rather than under it, and visibly lifted. */
+      ".launcher.dragging { z-index: 3; cursor: grabbing; transform: scale(1.08);",
+      "  box-shadow: 0 4px 10px rgba(0,0,0,.22), 0 14px 36px rgba(0,0,0,.2) }",
       /* The round variant: the same button with the label moved to its
          accessible name, for an app whose corner has no room for words. */
       ".launcher.icon { width: 48px; height: 48px; padding: 0;",
       "  justify-content: center }",
       ".launcher.icon svg { width: 22px; height: 22px; display: block }",
       ".launcher:focus-visible { outline: 2px solid #2f6b3b; outline-offset: 3px }",
-      ".bottom-right { right: 20px; bottom: 20px }",
-      ".bottom-left  { left: 20px;  bottom: 20px }",
-      ".top-right    { right: 20px; top: 20px }",
-      ".top-left     { left: 20px;  top: 20px }",
+      /* 24 PIXELS OF BREATHING ROOM, and [CORNER_GAP] in the script is the
+         same number: a dropped launcher glides to where these rules put it,
+         and any difference between the two is a jump at the end of the glide. */
+      ".bottom-right { right: 24px; bottom: 24px }",
+      ".bottom-left  { left: 24px;  bottom: 24px }",
+      ".top-right    { right: 24px; top: 24px }",
+      ".top-left     { left: 24px;  top: 24px }",
       /* A CARD, NOT A LIGHTBOX, and the page behind it stays live.
          The first version was a 1040px panel centred under a dark backdrop,
          which covered the very screen somebody had opened it to describe —
@@ -525,10 +535,10 @@ export function createIdeaWidget(options) {
       "}",
       /* Sits above its own launcher rather than beside it, so opening the
          dialog never moves the button that opened it. */
-      ".dock.bottom-left  { left: 20px;  bottom: 88px }",
-      ".dock.bottom-right { right: 20px; bottom: 88px }",
-      ".dock.top-left     { left: 20px;  top: 88px }",
-      ".dock.top-right    { right: 20px; top: 88px }",
+      ".dock.bottom-left  { left: 24px;  bottom: 88px }",
+      ".dock.bottom-right { right: 24px; bottom: 88px }",
+      ".dock.top-left     { left: 24px;  top: 88px }",
+      ".dock.top-right    { right: 24px; top: 88px }",
       ".dock iframe { flex: 1; width: 100%; border: 0; display: block }",
       /* ROOM FOR THE CONSOLE, asked for by the page and granted here.
          A conversation wants a column; a list of runs beside a list of
@@ -570,6 +580,12 @@ export function createIdeaWidget(options) {
       "          max-width: none; max-height: none; border-radius: 0 }",
       "}",
       "@media (prefers-reduced-motion: no-preference) {",
+      /* The glide into a corner, and the lift when it is picked up. Only
+         while settling: during the drag itself it follows the pointer
+         exactly, and anything easing behind a finger feels like lag. */
+      "  .launcher { transition: transform .14s ease-out }",
+      "  .launcher.settling { transition: left .32s cubic-bezier(.2,.8,.2,1),",
+      "    top .32s cubic-bezier(.2,.8,.2,1), transform .14s ease-out }",
       "  .dock { animation: rise .14s ease-out;",
       "          transition: width .16s ease-out, height .16s ease-out }",
       "  @keyframes rise { from { opacity: 0; transform: translateY(8px) }",
@@ -647,8 +663,15 @@ export function createIdeaWidget(options) {
     overlay.appendChild(button);
     overlay.appendChild(frame);
     root.appendChild(overlay);
+    markExpanded(true);
 
     document.addEventListener("keydown", onKey, true);
+  }
+
+  /** The launcher says whether its box is open, for a screen reader. */
+  function markExpanded(on) {
+    var el = root && root.querySelector(".launcher");
+    if (el) el.setAttribute("aria-expanded", on ? "true" : "false");
   }
 
   /**
@@ -668,6 +691,7 @@ export function createIdeaWidget(options) {
     overlay.remove();
     overlay = null;
     frame = null;
+    markExpanded(false);
     // Focus goes back where it was. A dialog that dumps focus at the top of the
     // document leaves a keyboard user re-tabbing through the whole page.
     if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
@@ -841,6 +865,153 @@ export function createIdeaWidget(options) {
   }
 
   /**
+   * Moving the launcher to another corner.
+   *
+   * A CORNER IS A GUESS about somebody else's layout. On a page with a dark
+   * left-hand nav, bottom-left is a green button on a green sidebar, sitting
+   * over the account menu. So the person can move it: hold it and drag.
+   *
+   * CORNERS ONLY. It follows the pointer freely while held and, let go, glides
+   * to the nearest corner. A button left in the middle of a page is over
+   * whatever that page puts in its middle, and the dock is laid out to open
+   * above a corner — so a corner is the only place either of them belongs.
+   * Settling into the corner CLASSES, not a left/top, means it stays in its
+   * corner as the window resizes without any clamping of its own.
+   *
+   * A PRESS IS STILL A PRESS. Nothing moves until the pointer has travelled
+   * [DRAG_SLOP] pixels, so a click with a shaky hand still opens the box, and
+   * the click that ends a real drag is swallowed rather than opening it.
+   * Measured in pixels rather than as a long-press timer, because a timer is a
+   * wait on every drag and a mouse user has no reason to expect one.
+   *
+   * The dock moves with it. It opens above its launcher's corner, so a box
+   * the person had dragged elsewhere is forgotten along with the old corner.
+   */
+  var CORNER_KEY = "avokaido.ideas.corner";
+  var CORNER_GAP = 24; // the corner classes' offset — see the stylesheet
+  var DRAG_SLOP = 5;
+  var launcherDragged = false;
+
+  function rememberedCorner() {
+    try {
+      var saved = localStorage.getItem(CORNER_KEY);
+      return CORNERS.indexOf(saved) < 0 ? null : saved;
+    } catch (e) {
+      return null; // A browser with storage blocked simply does not remember.
+    }
+  }
+
+  function startLauncherDrag(event) {
+    if (event.button !== 0) return;
+    var button = event.currentTarget;
+    if (button.classList.contains("settling")) return; // still gliding
+    var box = button.getBoundingClientRect();
+    var startX = event.clientX;
+    var startY = event.clientY;
+    var grabX = startX - box.left;
+    var grabY = startY - box.top;
+    var moved = false;
+
+    function move(e) {
+      if (!moved) {
+        var dx = e.clientX - startX;
+        var dy = e.clientY - startY;
+        if (dx * dx + dy * dy < DRAG_SLOP * DRAG_SLOP) return;
+        moved = true;
+        button.classList.add("dragging");
+        // The dock's frame would swallow the pointer as it crosses it,
+        // exactly as it would during a drag of the dock itself.
+        if (overlay) overlay.classList.add("dragging");
+      }
+      placeAt(button, e.clientX - grabX, e.clientY - grabY);
+    }
+    function drop() {
+      document.removeEventListener("pointermove", move, true);
+      document.removeEventListener("pointerup", drop, true);
+      document.removeEventListener("pointercancel", drop, true);
+      if (!moved) return; // never left the slop: a press, and the click opens
+      button.classList.remove("dragging");
+      if (overlay) overlay.classList.remove("dragging");
+      // Up to the click this drag is about to produce, and no further: a
+      // flag left standing would eat the next press, a keyboard's included.
+      launcherDragged = true;
+      setTimeout(function () {
+        launcherDragged = false;
+      }, 0);
+      settleInCorner(button, nearestCorner(button));
+    }
+
+    // Capture, on the document, for the same reason as the dock's drag.
+    document.addEventListener("pointermove", move, true);
+    document.addEventListener("pointerup", drop, true);
+    document.addEventListener("pointercancel", drop, true);
+  }
+
+  /** Whichever corner the middle of the launcher is closest to. */
+  function nearestCorner(el) {
+    var b = el.getBoundingClientRect();
+    var view = document.documentElement;
+    var top = b.top + b.height / 2 < view.clientHeight / 2;
+    var left = b.left + b.width / 2 < view.clientWidth / 2;
+    return (top ? "top-" : "bottom-") + (left ? "left" : "right");
+  }
+
+  /**
+   * The glide, then the handover to the corner class.
+   *
+   * Animated as left/top, because the drag leaves it positioned by left/top
+   * and a transition cannot run from `left` to `right`. Measured against the
+   * layout viewport (`clientWidth`), which is what `right: 24px` is measured
+   * against too — `innerWidth` counts the scrollbar, and would end the glide
+   * a scrollbar's width from where the class then puts it.
+   */
+  function settleInCorner(button, to) {
+    var view = document.documentElement;
+    var left =
+      to.indexOf("left") > 0 ? CORNER_GAP : view.clientWidth - button.offsetWidth - CORNER_GAP;
+    var top =
+      to.indexOf("top") === 0 ? CORNER_GAP : view.clientHeight - button.offsetHeight - CORNER_GAP;
+
+    var from = corner;
+    corner = to;
+    try {
+      localStorage.setItem(CORNER_KEY, to);
+      if (to !== from) localStorage.removeItem(STORE_KEY);
+    } catch (err) {
+      /* Not remembering is a smaller problem than throwing while dropping. */
+    }
+    if (overlay && to !== from) {
+      overlay.classList.remove(from);
+      overlay.classList.add(to);
+      overlay.style.left = overlay.style.top = "";
+      overlay.style.right = overlay.style.bottom = "";
+    }
+
+    button.classList.add("settling");
+    button.style.left = left + "px";
+    button.style.top = top + "px";
+
+    var finished = false;
+    function done() {
+      if (finished) return;
+      finished = true;
+      button.removeEventListener("transitionend", onEnd);
+      clearTimeout(timer);
+      button.classList.remove("settling", from);
+      button.classList.add(to);
+      button.style.left = button.style.top = "";
+      button.style.right = button.style.bottom = "";
+    }
+    function onEnd(e) {
+      if (e.propertyName === "left" || e.propertyName === "top") done();
+    }
+    button.addEventListener("transitionend", onEnd);
+    // For everywhere the transition never runs: reduced motion, a drop that
+    // is already in its corner, a tab hidden mid-glide.
+    var timer = setTimeout(done, 400);
+  }
+
+  /**
    * Re-clamping when the WINDOW changes, not just when the box does.
    *
    * The gap the other three clamps leave. A dock dragged to the right-hand edge
@@ -952,6 +1123,9 @@ export function createIdeaWidget(options) {
    */
   if (launcher !== "none") {
     var start = function () {
+      // Where the person last put it wins over where the page put it. Read
+      // here rather than at create, because only a launcher can be moved.
+      corner = rememberedCorner() || corner;
       mount();
       var button = document.createElement("button");
       button.type = "button";
@@ -971,8 +1145,16 @@ export function createIdeaWidget(options) {
       } else {
         button.textContent = label;
       }
+      button.addEventListener("pointerdown", startLauncherDrag);
+      button.setAttribute("aria-expanded", "false");
       button.addEventListener("click", function () {
-        open();
+        // The click that ends a drag is the drop, not a press.
+        if (launcherDragged) return;
+        // A TOGGLE. The button that opened the box is the obvious way to put
+        // it away again, and it is always in the same place — the × is in
+        // whichever corner of the box the page's layout left it.
+        if (overlay) close("launcher");
+        else open();
       });
       root.appendChild(button);
     };

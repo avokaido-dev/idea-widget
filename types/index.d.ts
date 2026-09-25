@@ -13,6 +13,7 @@ export type IdeaWidgetCorner = (typeof CORNERS)[number];
 /** Why the dock closed, as `avokaido:closed` reports it. */
 export type IdeaWidgetCloseReason =
   | "button"
+  | "launcher"
   | "escape"
   | "page"
   | "submitted"

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.6.0
+
+**The launcher can be moved.** Hold it and drag it anywhere; let go and it
+glides to the nearest of the four corners. Corners only, on purpose — a button
+left in the middle of your page is over whatever your page puts there, and the
+dock is laid out to open above a corner. The corner is remembered per browser
+(`avokaido.ideas.corner` in your origin's localStorage) and wins over
+`data-position`, which now says where the launcher *starts*. The dock follows
+it to its new corner, open or closed.
+
+A press is still a press: nothing moves until the pointer has travelled five
+pixels, and the click that ends a drag does not open the dock. On a phone a
+finger on the launcher moves it rather than scrolling the page.
+
+**The launcher is a toggle.** Pressing it while the dock is open closes it,
+and `avokaido:closed` reports that as `reason: "launcher"`. It carries
+`aria-expanded`.
+
+**24px from the corner, not 20.** Launcher and dock both, so neither sits
+against the edge of the window. The dock still opens 88px from the corner, so
+the gap between the two is 16px rather than 20px.
+
+Nothing else changes: same API, same size, and nothing new leaves your page.
+
 ## 1.5.0
 
 A link can now choose **who sees the button**: signed-in visitors only,
