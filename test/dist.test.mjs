@@ -101,6 +101,12 @@ describe("ducking for a screenshot", () => {
 });
 
 describe("the dock", () => {
+  it("puts the close button and the grip under the page's scrim", () => {
+    // Both lie over the frame, so a dialog inside it cannot cover them.
+    assert.match(dist, /\.dock\.covered \.close \{ filter: brightness\(\.4\); pointer-events: none \}/);
+    assert.match(dist, /\.dock\.covered \.grip \{ pointer-events: none \}/);
+  });
+
   it("drops the frame's pointer events during a drag", () => {
     // mousemove over a cross-origin iframe goes to the iframe's document, so
     // without this the box detaches on the first pixel that crosses into it.
@@ -320,6 +326,8 @@ describe("messages from the framed page", () => {
     "show",
     "expand",
     "collapse",
+    "cover",
+    "uncover",
   ]) {
     it(`handles avokaido:${type}`, () => {
       assert.ok(dist.includes(`"avokaido:${type}"`), type);

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.7.0
+
+**The close button goes under the dock's own scrim.** The close button and the
+drag grip sit over the framed page, so when that page opened something over
+itself — a screenshot shown full size — the close button stayed lit and
+pressable on top of the dimmed dock. The framed page can now say when it is
+showing a scrim (`avokaido:cover`) and when it has stopped
+(`avokaido:uncover`); in between, the widget dims the close button to match and
+neither it nor the grip takes a click. Nothing changes on your page.
+
 ## 1.6.1
 
 **Page rules follow a single-page app at once.** `pushState` fires no event, so
