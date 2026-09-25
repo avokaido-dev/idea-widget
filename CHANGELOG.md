@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.1
+
+**Page rules follow a single-page app at once.** `pushState` fires no event, so
+a link with page rules only noticed a change of screen on its half-second
+check, and the launcher could stay up to 500ms on a page it was ruled off —
+long enough to be seen on a loading screen. Where the browser has the
+Navigation API, the widget now listens to its `currententrychange`, which fires
+as the app changes screen; the half-second check stays for browsers without
+it. Nothing is patched on your page, and nothing else changes.
+
 ## 1.6.0
 
 **The launcher can be moved.** Hold it and drag it anywhere; let go and it

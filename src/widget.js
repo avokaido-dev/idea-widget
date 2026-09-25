@@ -434,6 +434,14 @@ export function createIdeaWidget(options) {
    * wrapping another application's `pushState` is the kind of reach into the
    * host page this widget is written never to make. Only runs for a link with
    * page rules.
+   *
+   * THE NAVIGATION API FIRST, where the browser has one. `pushState` fires no
+   * event of its own, so on the poll alone the launcher stayed up to half a
+   * second on the next screen — long enough to be seen on a loading screen
+   * the app hands off from, which is the page it was ruled off. The browser's
+   * `currententrychange` fires during `pushState` and `replaceState`, after
+   * `location` has moved, and listening to it patches nothing. The poll stays
+   * for the browsers without it.
    */
   function watchRoute() {
     if (destroyed) return;
@@ -445,12 +453,16 @@ export function createIdeaWidget(options) {
       settle();
     };
     var timer = setInterval(tick, 500);
+    var nav = window.navigation;
+    var hasNav = Boolean(nav && typeof nav.addEventListener === "function");
     window.addEventListener("popstate", tick);
     window.addEventListener("hashchange", tick);
+    if (hasNav) nav.addEventListener("currententrychange", tick);
     teardown.push(function () {
       clearInterval(timer);
       window.removeEventListener("popstate", tick);
       window.removeEventListener("hashchange", tick);
+      if (hasNav) nav.removeEventListener("currententrychange", tick);
     });
   }
 
