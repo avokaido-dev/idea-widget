@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.6.1 — one script tag on your page.
+ * Avokaido idea widget 1.7.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -600,6 +600,13 @@ function createIdeaWidget(options) {
       "  background: rgba(255,255,255,.86); cursor: pointer;",
       "}",
       ".close:hover { background: #f3f4ef; color: #0a1b0d }",
+      /* UNDER THE PAGE'S OWN SCRIM while it shows one. The close button and
+         the grip lie over the frame, so a dialog inside it — a screenshot
+         opened full size — is drawn beneath them and cannot darken them. The
+         page says when, and this does what its scrim would have done: 60%
+         black is 40% brightness, and neither takes a click until it is gone. */
+      ".dock.covered .close { filter: brightness(.4); pointer-events: none }",
+      ".dock.covered .grip { pointer-events: none }",
       /* On a phone there is no page left to keep visible, so it takes the
          screen — a 384px card floating over a 390px viewport is a lightbox
          with wasted margins. */
@@ -1134,6 +1141,10 @@ function createIdeaWidget(options) {
       resize(true);
     } else if (type === "avokaido:collapse") {
       resize(false);
+    } else if (type === "avokaido:cover") {
+      if (overlay) overlay.classList.add("covered");
+    } else if (type === "avokaido:uncover") {
+      if (overlay) overlay.classList.remove("covered");
     }
   }
   window.addEventListener("message", onMessage);
