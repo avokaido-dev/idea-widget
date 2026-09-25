@@ -125,6 +125,49 @@ describe("the dock", () => {
   });
 });
 
+describe("the launcher", () => {
+  it("does not move until the pointer has left a few pixels of slop", () => {
+    // Without the slop a click with a shaky hand becomes a one-pixel drag, and
+    // the box never opens.
+    assert.match(core, /var DRAG_SLOP = 5;/);
+    assert.match(core, /dx \* dx \+ dy \* dy < DRAG_SLOP \* DRAG_SLOP/);
+  });
+
+  it("swallows the click that ends a drag, and only that one", () => {
+    // A flag left standing would eat the next real press, a keyboard's too.
+    assert.match(core, /if \(launcherDragged\) return;/);
+    assert.match(core, /launcherDragged = true;\s+setTimeout\(function \(\) \{\s+launcherDragged = false;\s+\}, 0\);/);
+  });
+
+  it("settles in a corner, never where it was dropped", () => {
+    assert.match(core, /settleInCorner\(button, nearestCorner\(button\)\)/);
+  });
+
+  it("glides to the offset the corner classes use", () => {
+    // Any difference between the two is a jump at the end of the glide.
+    assert.match(core, /var CORNER_GAP = 24;/);
+    assert.match(dist, /\.bottom-right \{ right: 24px; bottom: 24px \}/);
+    assert.match(dist, /\.top-left     \{ left: 24px;  top: 24px \}/);
+  });
+
+  it("ends the glide even where the transition never runs", () => {
+    assert.match(core, /var timer = setTimeout\(done, 400\);/);
+  });
+
+  it("drags under a finger instead of scrolling the page", () => {
+    assert.match(dist, /touch-action: none/);
+  });
+
+  it("remembers its corner, per host page", () => {
+    assert.match(dist, /"avokaido\.ideas\.corner"/);
+  });
+
+  it("closes the dock when pressed while it is open", () => {
+    assert.match(core, /if \(overlay\) close\("launcher"\);\s+else open\(\);/);
+    assert.match(core, /aria-expanded/);
+  });
+});
+
 describe("where the person is", () => {
   // The ONE decision in this feature that is invisible in review and expensive
   // to get wrong. `createIdeaWidget` runs when the host app boots; by the time
