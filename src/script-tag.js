@@ -54,6 +54,8 @@ if (script) {
       // before this deferred script ran cannot call identify() yet, so it may
       // leave the visitor at `window.avokaido.user` instead — see "Choosing
       // who sees it" in the README for the three-line helper that does this.
+      // The slot is an object in the page's own memory, so it may carry a
+      // `getIdToken` function; an attribute never can, and never should.
       user:
         userFrom(script) ||
         (window.avokaido && typeof window.avokaido.user === "object"
@@ -119,7 +121,9 @@ if (script) {
       widget.close("api");
     };
     window.avokaido.destroyIdeas = widget.destroy;
-    // Who is looking, for an app that signs somebody in after load.
+    // Who is looking, for an app that signs somebody in after load:
+    // `{ id, email, traits }`, and `getIdToken` for an app whose users sign
+    // in through Avokaido (see readUser in widget.js).
     window.avokaido.identify = widget.identify;
     // For a page with its own menu item: whether to show it. See also the
     // `avokaido:visibility` event, which says the same thing when it changes.
@@ -127,7 +131,10 @@ if (script) {
 
     // THE SAME THING BY ATTRIBUTE, for the integrations that cannot call a
     // function — the Dart wrapper mounts through this tag and sets attributes
-    // as somebody signs in and out, exactly as it does for data-context.
+    // as somebody signs in and out, exactly as it does for data-context. A
+    // description only: an attribute is readable by every script on the page,
+    // so there is no attribute for a token, and a change here replaces a
+    // visitor that identify() gave a `getIdToken` with one that has none.
     if (typeof MutationObserver !== "undefined") {
       var tag = script;
       new MutationObserver(function () {

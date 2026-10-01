@@ -103,6 +103,19 @@ export interface IdeaWidgetUser {
       | boolean
       | readonly (string | number | boolean)[];
   };
+  /**
+   * For an app whose users sign in through Avokaido (an app on Avokaido's
+   * hosting with sign-in turned on): returns the signed-in user's ID token,
+   * `() => user.getIdToken()`. The audience check sends it as
+   * `Authorization: Bearer`, and Avokaido reads the visitor's id, verified
+   * email and role from the token rather than from your page.
+   *
+   * Kept as a function in memory: never serialised, never put in an
+   * attribute. Must be the object's OWN property — a Firebase `User` passed
+   * as it is does not hand over its token. A throw, a rejection or no answer
+   * within a few seconds checks without it.
+   */
+  getIdToken?: () => string | null | undefined | PromiseLike<string | null | undefined>;
 }
 
 /**

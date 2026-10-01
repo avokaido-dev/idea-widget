@@ -146,6 +146,7 @@ all empty and everybody sees it, which is how every link starts.
 | Rule | Example | Needs your page to say who is looking |
 |---|---|---|
 | Signed-in visitors only | — | yes — an id or an email |
+| Verified sign-ins only | — | yes — `getIdToken` (apps whose users sign in through Avokaido) |
 | These people | `anna@acme.com`, `@pilot-customer.io` | yes — an email |
 | Visitors whose traits match | `role = admin, owner` · `plan = pro` | yes — traits |
 | On these pages | `/settings*`, `/app/*`, `/#/admin*` | no |
@@ -185,6 +186,43 @@ Changing the `data-user-*` attributes later works too, which is what the Dart
 wrapper does. With the package, pass `user` to `createIdeaWidget` or call
 `widget.identify()`.
 
+### When your users sign in through Avokaido
+
+An app on Avokaido's hosting with sign-in turned on can do better than
+describe its visitor: it can hand the widget the signed-in user's ID token.
+Pass `getIdToken` with the visitor, and drive it from the auth state, so a
+refreshed token and a sign-out both reach the widget:
+
+```js
+import { onIdTokenChanged } from "firebase/auth";
+import { firebaseAuth } from "@/lib/firebase";
+
+onIdTokenChanged(firebaseAuth(), (user) => {
+  identifyForAvokaido(
+    user
+      ? { id: user.uid, email: user.email, getIdToken: () => user.getIdToken() }
+      : null,
+  );
+});
+```
+
+The audience check then sends the token as `Authorization: Bearer`, and
+Avokaido verifies it against your app's own sign-in: the visitor is the
+token's user id, its verified email and its `role` — not what the page says.
+That is what the **Verified sign-ins only** rule asks for, and a token that does
+not verify, or belongs to another app, counts as nobody.
+
+- `getIdToken` stays a function in the widget's memory. It is never
+  serialised, never put in an attribute, never posted; only the token it
+  returns is sent, and only in that header. There is no `data-user-*`
+  attribute for it.
+- It has to be the object's **own** property. Passing a Firebase `User`
+  straight to `identify()` describes the visitor, as it always did, and does
+  not send its token.
+- A throw, a rejection, or no answer within four seconds checks without the
+  token, so a bug in your sign-in hides the button from a verified-only link
+  rather than leaving it undecided.
+
 **The button stays hidden until Avokaido has answered**, so it never flashes in
 front of somebody it was meant to be hidden from — and stays hidden if we cannot
 be reached, since the interview it opens could not load either. `openIdeas()`
@@ -205,7 +243,8 @@ pattern matches anything; a pattern without `#` ignores the hash.
 describes its own visitor, so anybody who can edit it — or who posts to the
 interview with the key, which is public — can describe themselves however they
 like. Use it to put the button in front of the right people; do not use it to
-keep anybody out.
+keep anybody out. A verified sign-in proves who is looking, but the button
+still only opens a suggestion box.
 
 ## Your own menu item, or an icon
 
@@ -487,6 +526,11 @@ what your page chose to say in `data-user-*` or `identify()`. It is compared
 with the link's rules and dropped; see
 [Choosing who sees it](#choosing-who-sees-it). A link open to everybody is asked
 only whether it is switched on, and nothing about the visitor is sent.
+
+**The signed-in user's ID token — only when you gave `getIdToken`**, and only
+to a link limited to certain visitors: as the `Authorization` header of that
+one check, verified and dropped like the rest. Never a cookie
+(`credentials: "omit"`), never in a URL.
 
 Everything else that reaches us is what the person typed and any screenshot they
 chose to share.

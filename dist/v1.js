@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.7.0 — one script tag on your page.
+ * Avokaido idea widget 1.8.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -90,10 +90,15 @@ const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  *        The query is never sent either way, which is where `?token=` and
  *        `?email=` live; a path segment like `/patients/4821` is not, and that
  *        is the case this switch is for.
- * @param {{id?: string|number, email?: string, traits?: Object}} [options.user]
+ * @param {{id?: string|number, email?: string, traits?: Object, getIdToken?: Function}} [options.user]
  *        Who is looking at your page, for a link whose admin chose who sees the
  *        button. Only needed then; call `identify()` later if you learn it
  *        after boot. Sent to Avokaido to be compared and dropped, never stored.
+ *
+ *        `getIdToken`, for an app that signs its users in through Avokaido:
+ *        a function returning (a promise of) the signed-in user's ID token.
+ *        The audience check then sends the token instead of a description,
+ *        and Avokaido reads who is looking from it — see `readUser`.
  */
 /**
  * The longest context this will put in a URL.
@@ -186,6 +191,110 @@ function matchesPath(patterns, loc) {
     if (re.test(subject)) return true;
   }
   return false;
+}
+
+/**
+ * How long the audience check waits for the app's `getIdToken()`.
+ *
+ * A Firebase ID token is cached and refreshed in the background, so this is
+ * nearly always instant; on a network that has stalled the refresh, asking
+ * without a token after a few seconds beats a button that never decides.
+ */
+var ID_TOKEN_WAIT_MS = 4000;
+
+/** The longest token this will put in a header — far above any ID token. */
+var MAX_ID_TOKEN = 8192;
+
+/**
+ * The visitor as this widget keeps them: the four things `identify()` takes,
+ * and nothing else of whatever object the app handed over.
+ *
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE, like `routeOf`.
+ *
+ * `getIdToken` IS KEPT, NEVER WRITTEN DOWN. It stays a function in this
+ * closure: it is not serialised, not put in an attribute, not posted. Only
+ * what it returns leaves the page, and only as the `Authorization` header of
+ * the audience check (see `idTokenWithin`).
+ *
+ * ONLY AN OWN PROPERTY COUNTS. A Firebase `User` has a `getIdToken` method on
+ * its prototype, and an app that passed one straight to `identify()` — which
+ * worked, as a description, before this existed — must not start sending a
+ * token for its own Firebase project to Avokaido, which could neither use it
+ * nor should hold it. So the function is taken only when the object itself
+ * carries it: `identify({ id, email, getIdToken: () => user.getIdToken() })`.
+ * It is called on that object, so a method written in place keeps its `this`.
+ */
+function readUser(value) {
+  if (!value || typeof value !== "object") return null;
+  var user = { id: value.id, email: value.email, traits: value.traits };
+  if (
+    Object.prototype.hasOwnProperty.call(value, "getIdToken") &&
+    typeof value.getIdToken === "function"
+  ) {
+    var fn = value.getIdToken;
+    user.getIdToken = function () {
+      return fn.call(value);
+    };
+  }
+  return user;
+}
+
+/**
+ * What the audience check posts about the visitor: the description, never
+ * the token function. EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function visitorBody(user) {
+  return {
+    id: user.id == null ? "" : String(user.id),
+    email: user.email || "",
+    traits: user.traits || {},
+  };
+}
+
+/**
+ * The ID token [getIdToken] gives within [ms], or null — for no function, a
+ * throw, a rejection, a timeout, or anything that is not token-shaped.
+ *
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ *
+ * A HOST APP'S BUG MUST NOT HIDE THE BUTTON FOREVER, for the reason
+ * `contextNow` gives: this calls somebody else's code. A failure is reported
+ * to the console and the check goes ahead without a token, as the page's
+ * description alone — which a link that only shows to signed-in users of the
+ * app will then not admit, exactly as before the token existed.
+ */
+function idTokenWithin(getIdToken, ms) {
+  if (typeof getIdToken !== "function") return Promise.resolve(null);
+  return new Promise(function (resolve) {
+    var done = false;
+    var settle = function (token) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(
+        typeof token === "string" &&
+          token.length > 0 &&
+          token.length <= MAX_ID_TOKEN &&
+          /^[A-Za-z0-9._-]+$/.test(token)
+          ? token
+          : null,
+      );
+    };
+    var failed = function (err) {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[avokaido] getIdToken() failed; checking without it", err);
+      }
+      settle(null);
+    };
+    var timer = setTimeout(function () {
+      failed(new Error("timed out after " + ms + "ms"));
+    }, ms);
+    try {
+      Promise.resolve(getIdToken()).then(settle, failed);
+    } catch (err) {
+      failed(err);
+    }
+  });
 }
 
 /**
@@ -337,7 +446,7 @@ function createIdeaWidget(options) {
    * bug this exists to prevent, and if Avokaido cannot be reached the
    * interview it opens could not load either.
    */
-  var user = opts.user || null;
+  var user = readUser(opts.user);
   var rules = null; // { paths, visitor } once the link has answered
   var admitted = false; // the server-decided half
   var onPage = false; // the path half
@@ -352,7 +461,8 @@ function createIdeaWidget(options) {
 
   function hasUser() {
     return Boolean(
-      user && ((user.id != null && user.id !== "") || user.email),
+      user &&
+        ((user.id != null && user.id !== "") || user.email || user.getIdToken),
     );
   }
 
@@ -384,7 +494,15 @@ function createIdeaWidget(options) {
     return origin + "/api/idea/audience/" + encodeURIComponent(key);
   }
 
-  /** Asks the server-decided half again — at boot, and on every identify(). */
+  /**
+   * Asks the server-decided half again — at boot, and on every identify().
+   *
+   * WITH THE APP'S ID TOKEN when it gave a `getIdToken`: asked for afresh on
+   * every check, so a token the app refreshed is the one sent, and sent as
+   * `Authorization: Bearer` — a header, never the body or a URL. Still
+   * `credentials: "omit"`: the token is the only credential, and this
+   * request carries no cookie of anybody's.
+   */
   function checkVisitor() {
     if (destroyed) return;
     var seq = ++checkSeq;
@@ -397,19 +515,19 @@ function createIdeaWidget(options) {
     if (!rules || !rules.visitor) return done(Boolean(rules));
     // No visitor named, and every people rule needs one: no need to ask.
     if (!hasUser()) return done(false);
-    fetch(audienceUrl(), {
-      method: "POST",
-      credentials: "omit",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        visitor: {
-          id: user.id == null ? "" : String(user.id),
-          email: user.email || "",
-          traits: user.traits || {},
-        },
-      }),
-    })
-      .then(function (r) { return r.ok ? r.json() : { show: false }; })
+    var asking = user;
+    idTokenWithin(asking.getIdToken, ID_TOKEN_WAIT_MS)
+      .then(function (token) {
+        if (seq !== checkSeq) return null; // superseded while the app answered
+        var headers = { "Content-Type": "application/json" };
+        if (token) headers.Authorization = "Bearer " + token;
+        return fetch(audienceUrl(), {
+          method: "POST",
+          credentials: "omit",
+          headers: headers,
+          body: JSON.stringify({ visitor: visitorBody(asking) }),
+        }).then(function (r) { return r.ok ? r.json() : { show: false }; });
+      })
       .then(function (body) { done(Boolean(body && body.show)); })
       .catch(function () { done(false); });
   }
@@ -1234,17 +1352,18 @@ function createIdeaWidget(options) {
       close(reason || "api");
     },
     destroy: destroy,
-    /**
-     * Says who is looking, or that nobody is (`null`). For an app that signs
-     * somebody in after the widget booted, and for signing them out again.
-     */
     /** Whether the button would show for this visitor on this page right
      *  now — false until the link has answered. */
     isShown: function () {
       return allowed();
     },
+    /**
+     * Says who is looking, or that nobody is (`null`). For an app that signs
+     * somebody in after the widget booted, and for signing them out again.
+     * `{ id, email, traits, getIdToken }` — see `readUser` for the last.
+     */
     identify: function (next) {
-      user = next || null;
+      user = readUser(next);
       if (rules) checkVisitor();
     },
   };
@@ -1306,6 +1425,8 @@ if (script) {
       // before this deferred script ran cannot call identify() yet, so it may
       // leave the visitor at `window.avokaido.user` instead — see "Choosing
       // who sees it" in the README for the three-line helper that does this.
+      // The slot is an object in the page's own memory, so it may carry a
+      // `getIdToken` function; an attribute never can, and never should.
       user:
         userFrom(script) ||
         (window.avokaido && typeof window.avokaido.user === "object"
@@ -1371,7 +1492,9 @@ if (script) {
       widget.close("api");
     };
     window.avokaido.destroyIdeas = widget.destroy;
-    // Who is looking, for an app that signs somebody in after load.
+    // Who is looking, for an app that signs somebody in after load:
+    // `{ id, email, traits }`, and `getIdToken` for an app whose users sign
+    // in through Avokaido (see readUser in widget.js).
     window.avokaido.identify = widget.identify;
     // For a page with its own menu item: whether to show it. See also the
     // `avokaido:visibility` event, which says the same thing when it changes.
@@ -1379,7 +1502,10 @@ if (script) {
 
     // THE SAME THING BY ATTRIBUTE, for the integrations that cannot call a
     // function — the Dart wrapper mounts through this tag and sets attributes
-    // as somebody signs in and out, exactly as it does for data-context.
+    // as somebody signs in and out, exactly as it does for data-context. A
+    // description only: an attribute is readable by every script on the page,
+    // so there is no attribute for a token, and a change here replaces a
+    // visitor that identify() gave a `getIdToken` with one that has none.
     if (typeof MutationObserver !== "undefined") {
       var tag = script;
       new MutationObserver(function () {
