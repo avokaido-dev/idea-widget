@@ -13,7 +13,14 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { dirname, join } from "node:path";
-import { flattenContext, matchesPath, routeOf } from "../src/widget.js";
+import {
+  flattenContext,
+  idTokenWithin,
+  matchesPath,
+  readUser,
+  routeOf,
+  visitorBody,
+} from "../src/widget.js";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -480,5 +487,95 @@ describe("an app that knows the visitor before the widget loads", () => {
   const tag = readFileSync(join(root, "src/script-tag.js"), "utf8");
   it("picks up window.avokaido.user, after the tag's own attributes", () => {
     assert.match(tag, /userFrom\(script\) \|\|\s*\(window\.avokaido && typeof window\.avokaido\.user === "object"/);
+  });
+});
+
+describe("a visitor proven by the app's own sign-in", () => {
+  const tag = readFileSync(join(root, "src/script-tag.js"), "utf8");
+  const quiet = (fn) => async () => {
+    // idTokenWithin reports a host app's failure to the console, which is
+    // right on a page and noise here.
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      await fn();
+    } finally {
+      console.warn = warn;
+    }
+  };
+
+  it("keeps id, email, traits and an own getIdToken, and nothing else of the app's object", async () => {
+    const app = { id: 7, email: "a@b.co", traits: { role: "admin" }, phone: "+46", getIdToken: () => "t.o.k" };
+    const user = readUser(app);
+    assert.deepEqual(Object.keys(user).sort(), ["email", "getIdToken", "id", "traits"]);
+    assert.equal(await user.getIdToken(), "t.o.k");
+    assert.equal(readUser(null), null);
+    assert.equal(readUser("anna"), null);
+    assert.equal("getIdToken" in readUser({ id: 1, getIdToken: "not a function" }), false);
+  });
+
+  it("does not take a getIdToken from the prototype, so a Firebase User passed as is sends no token", () => {
+    class FirebaseUserLike {
+      constructor() {
+        this.uid = "u1";
+        this.email = "a@b.co";
+      }
+      getIdToken() {
+        return Promise.resolve("their.own.project");
+      }
+    }
+    const user = readUser(new FirebaseUserLike());
+    assert.equal("getIdToken" in user, false);
+    assert.equal(user.email, "a@b.co");
+  });
+
+  it("calls a method written in place on the object it was given", async () => {
+    const app = {
+      token: "a.b.c",
+      getIdToken() {
+        return this.token;
+      },
+    };
+    assert.equal(await readUser(app).getIdToken(), "a.b.c");
+  });
+
+  it("never posts the token function, only the description", () => {
+    const body = visitorBody(readUser({ id: 42, getIdToken: () => "x.y.z" }));
+    assert.deepEqual(body, { id: "42", email: "", traits: {} });
+    assert.equal(JSON.stringify({ visitor: body }).includes("getIdToken"), false);
+  });
+
+  it("waits for the token, and checks without it on a throw, a rejection, a timeout or junk", quiet(async () => {
+    assert.equal(await idTokenWithin(() => "h.p.s", 50), "h.p.s");
+    assert.equal(await idTokenWithin(() => Promise.resolve("h.p.s"), 50), "h.p.s");
+    assert.equal(await idTokenWithin(undefined, 50), null);
+    assert.equal(await idTokenWithin(() => { throw new Error("boom"); }, 50), null);
+    assert.equal(await idTokenWithin(() => Promise.reject(new Error("no")), 50), null);
+    assert.equal(await idTokenWithin(() => new Promise(() => {}), 20), null);
+    assert.equal(await idTokenWithin(() => null, 50), null, "signed out");
+    assert.equal(await idTokenWithin(() => "a b\r\nX-Evil: 1", 50), null, "not a header injection");
+    assert.equal(await idTokenWithin(() => "x".repeat(9000), 50), null);
+  }));
+
+  it("sends the token as a bearer header, still with no cookies", () => {
+    assert.match(core, /if \(token\) headers\.Authorization = "Bearer " \+ token;/);
+    assert.match(core, /idTokenWithin\(asking\.getIdToken, ID_TOKEN_WAIT_MS\)/);
+    assert.match(core, /method: "POST",\s+credentials: "omit",\s+headers: headers,/);
+    assert.equal(/credentials: "include"/.test(core), false);
+  });
+
+  it("never writes the token, or its function, anywhere but that header", () => {
+    assert.equal(/setAttribute\([^)]*[Tt]oken/.test(core + tag), false);
+    // localStorage holds the launcher's corner and nothing about anybody.
+    assert.equal(/(localStorage|sessionStorage)\.setItem\([^)]*([Tt]oken|user)/.test(core), false);
+    assert.equal(/sessionStorage|document\.cookie/.test(core), false);
+    assert.equal(/JSON\.stringify\(\s*(user|asking)\b/.test(core), false);
+    assert.equal(/data-user-token|data-id-token/.test(tag), false);
+  });
+
+  it("counts a visitor who gave only getIdToken as somebody to ask about", () => {
+    assert.match(core, /\(user\.id != null && user\.id !== ""\) \|\| user\.email \|\| user\.getIdToken/);
+    assert.match(core, /identify: function \(next\) \{\n\s+user = readUser\(next\);/);
+    assert.match(core, /var user = readUser\(opts\.user\);/);
   });
 });

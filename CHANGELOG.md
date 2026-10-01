@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.8.0
+
+**A signed-in user can be proven, not just described.** `identify()` takes a
+`getIdToken` function beside `id`, `email` and `traits`. For a link limited to
+certain visitors, the audience check asks it for the user's ID token and sends
+it as `Authorization: Bearer`; Avokaido verifies it against the app's own
+sign-in and reads the visitor's id, verified email and `role` from it. That is
+what a link's new **Verified sign-ins only** rule needs — for apps whose users
+sign in through Avokaido (Avokaido hosting with sign-in turned on).
+
+The function is kept in memory and never serialised, put in an attribute or
+posted; only the token it returns leaves your page, in that one header, with
+`credentials: "omit"` as before. It has to be the object's own property, so a
+Firebase `User` passed as it is still only describes the visitor. A throw, a
+rejection or no answer within four seconds checks without it. Nothing changes
+for a page that does not pass it.
+
 ## 1.7.0
 
 **The close button goes under the dock's own scrim.** The close button and the
