@@ -80,6 +80,7 @@ if (script) {
       label: script.getAttribute("data-label") || undefined,
       launcher: script.getAttribute("data-launcher") || undefined,
       position: script.getAttribute("data-position") || undefined,
+      preload: script.getAttribute("data-preload") || undefined,
       // READ ON EVERY OPEN, WHICH IS THE WHOLE REASON IT IS A FUNCTION. Every
       // other attribute here is read once, because none of them changes: the
       // key, the origin and the corner are the same on every screen of the

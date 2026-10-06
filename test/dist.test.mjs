@@ -176,7 +176,9 @@ describe("the launcher", () => {
   });
 
   it("closes the dock when pressed while it is open", () => {
-    assert.match(core, /if \(overlay\) close\("launcher"\);\s+else open\(\);/);
+    // `shown`, not `overlay`: a frame kept warm exists while the dock is
+    // closed, and toggling on it would close a box nobody can see.
+    assert.match(core, /if \(shown\) close\("launcher"\);\s+else open\(\);/);
     assert.match(core, /aria-expanded/);
   });
 });
@@ -187,10 +189,17 @@ describe("where the person is", () => {
   // somebody presses the launcher they are four screens away. A URL built once
   // at create would describe a screen nobody has looked at for twenty minutes,
   // and would do it convincingly.
-  it("builds the frame URL at open, not once at create", () => {
-    assert.match(core, /frame\.src = frameUrlNow\(\)/);
+  it("builds the frame URL when the frame is built, not once at create", () => {
+    assert.match(core, /frame\.src = frameUrlNow\(parked\)/);
     // No hoisted `var frameUrl = …` left behind for somebody to reach for.
     assert.equal(/var frameUrl\s*=/.test(core), false);
+  });
+
+  it("tells a frame kept warm where the person is, on every open", () => {
+    // Built ahead, the frame's URL describes the moment it was built; the
+    // open is what has to carry the screen the suggestion is made on.
+    assert.match(core, /function tellOpen\(openMs\) \{\s+var message = whereNow\(\);/);
+    assert.match(core, /if \(frameReady\) tellOpen\(/);
   });
 
   it("sends nothing at all when the host app says nothing", () => {
@@ -577,5 +586,49 @@ describe("a visitor proven by the app's own sign-in", () => {
     assert.match(core, /\(user\.id != null && user\.id !== ""\) \|\| user\.email \|\| user\.getIdToken/);
     assert.match(core, /identify: function \(next\) \{\n\s+user = readUser\(next\);/);
     assert.match(core, /var user = readUser\(opts\.user\);/);
+  });
+});
+
+describe("the chat kept warm", () => {
+  it("builds ahead on intent by default, and can be told otherwise", () => {
+    assert.match(core, /var preload = String\(opts\.preload \|\| "intent"\)/);
+    assert.match(dist, /data-preload/);
+    for (const ev of ["pointerenter", "focus", "touchstart"]) {
+      assert.match(core, new RegExp(`button\\.addEventListener\\("${ev}", warm`));
+    }
+  });
+
+  it("parks with opacity and inert, never display or visibility", () => {
+    // display:none and an off-screen frame both stop Flutter drawing its
+    // first frame, which is the thing being built ahead.
+    assert.match(dist, /\.dock\.parked \{ opacity: 0; pointer-events: none \}/);
+    assert.match(core, /overlay\.inert = true;/);
+    assert.equal(/\.parked[^}]*display:\s*none/.test(dist), false);
+  });
+
+  it("keeps the frame on close, and drops it once it is finished with", () => {
+    assert.match(core, /if \(reason === "submitted" \|\| reason === "page"\) discard\(\);\s+else park\(\);/);
+    assert.match(core, /postToFrame\(\{ type: "avokaido:closed" \}\)/);
+  });
+
+  it("talks to the frame at our origin only", () => {
+    // The open carries the app's sign-in token when it gave one; `*` would
+    // hand it to whatever document the frame had navigated to.
+    assert.match(core, /frame\.contentWindow\.postMessage\(message, origin\)/);
+    assert.equal(/contentWindow\.postMessage\([^)]*"\*"\)/.test(core), false);
+  });
+
+  it("drops a frame built ahead that never came up", () => {
+    assert.match(core, /if \(!frameReady && !shown\) discard\(\);/);
+  });
+
+  it("connects to where the chat loads from, ahead of time, and cleans up", () => {
+    assert.match(core, /link\.rel = "preconnect"/);
+    assert.match(core, /https:\/\/www\.gstatic\.com/);
+    assert.match(core, /hints\[j\]\.remove\(\)/);
+  });
+
+  it("hears Escape from inside the chat, and keeps it", () => {
+    assert.match(core, /type === "avokaido:dismiss"\) \{[\s\S]*?close\("escape"\);/);
   });
 });
