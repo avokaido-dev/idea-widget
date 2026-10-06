@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.9.0
+
+**The chat opens in a blink, and is where you left it.** The chat is a whole
+web app, and it used to be built on the click and thrown away on close — so
+every open was several seconds of a white box. Now:
+
+- It is **built ahead**, out of sight: `data-preload` / `preload` is
+  `"intent"` by default (when the launcher is pointed at, focused or
+  touched, or after a few idle seconds once the tab is visible), `"eager"`
+  (as soon as the launcher may show), or `"off"` (only on the click, as
+  before). Built ahead, it holds no connection until it is opened.
+  `widget.warm()` builds it now, for an app that knows better.
+- **Closing keeps it**, out of sight, so reopening is instant and the
+  conversation is where it was left. It is thrown away once finished with:
+  after a suggestion is sent, or when the page asks to be closed.
+- It is **told where the person is on every open** (route and context), so a
+  chat kept across pages still files the screen the suggestion was made on.
+- It **connects ahead** to where the chat loads from (`<link
+  rel="preconnect">` to Avokaido and to the renderer's CDN), and **focuses
+  the chat** on open, so the first keystroke lands in it.
+- **Escape inside the chat** now closes the dock. Focus is in the chat once
+  it opens, so the key never reached the page's own listener; the chat
+  passes it on.
+- New events: `avokaido:painted` (`detail.bootMs`).
+
+**One change to what leaves your page:** when you pass `getIdToken`, the
+token it returns is also handed to the chat when it opens — posted to
+Avokaido's own origin only, never `*` — so the chat can show the
+workspace's own people what building a request would take. It still goes
+nowhere but Avokaido.
+
 ## 1.8.0
 
 **A signed-in user can be proven, not just described.** `identify()` takes a

@@ -34,6 +34,14 @@ export interface IdeaWidgetOptions {
   launcher?: "floating" | "icon" | "none";
   position?: IdeaWidgetCorner;
   /**
+   * When the chat is built ahead of the click, so it opens instantly.
+   * `"intent"` (default): when the launcher is pointed at, focused or
+   * touched, or after a few idle seconds. `"eager"`: as soon as the launcher
+   * may show. `"off"`: only on the click. A chat built ahead holds no
+   * connection until it is opened.
+   */
+  preload?: "intent" | "eager" | "off";
+  /**
    * Where in YOUR app the person is, so the interview does not have to spend
    * one of its few questions asking what they were doing.
    *
@@ -135,8 +143,17 @@ export type IdeaWidgetContext =
 export interface IdeaWidget {
   /** Opens the dock. Mounts on first call. */
   open(): void;
-  /** Closes it. The reason reaches `avokaido:closed` as `detail.reason`. */
+  /**
+   * Closes it. The reason reaches `avokaido:closed` as `detail.reason`. The
+   * chat is kept, out of sight, so the next open is instant and the
+   * conversation is where it was left.
+   */
   close(reason?: IdeaWidgetCloseReason): void;
+  /**
+   * Builds the chat now, out of sight, so the next open is instant — for an
+   * app that knows better than `preload` when it is about to be wanted.
+   */
+  warm(): void;
   /**
    * Removes the widget and every listener it added. Call this when the
    * component holding it unmounts.

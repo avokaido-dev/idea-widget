@@ -28,6 +28,15 @@
 /** Corners the launcher and the dock may sit in. */
 export const CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"];
 
+/** When the chat may be built ahead of the click — see `preload`. */
+export const PRELOADS = ["intent", "eager", "off"];
+
+/** A frame built ahead that never says it is ready is dropped after this. */
+var READY_WITHIN_MS = 20000;
+
+/** How long the page must be quiet before `intent` builds the chat anyway. */
+var IDLE_WARM_MS = 4000;
+
 /**
  * Where the interview is hosted, when you do not say.
  *
@@ -342,16 +351,54 @@ export function createIdeaWidget(options) {
   if (CORNERS.indexOf(corner) < 0) corner = "bottom-right";
 
   /**
+   * WHEN THE CHAT IS BUILT: ahead of the click, so it opens in a blink.
+   *
+   * The chat is a whole web app, and building it on the click is several
+   * seconds of a white box in front of somebody who asked for help. So it is
+   * built ahead and kept, out of sight — `intent`, the default, does that
+   * when somebody points at the launcher (or focuses or touches it), or once
+   * the page has been idle a few seconds; `eager` as soon as the launcher may
+   * show, for an app's own dashboard; `off` only on the click, as before. A
+   * frame built ahead holds no connection until it is opened.
+   */
+  var preload = String(opts.preload || "intent").toLowerCase();
+  if (PRELOADS.indexOf(preload) < 0) preload = "intent";
+
+  /**
+   * The two origins the chat loads from, connected to before it is asked
+   * for: ours, and the one Flutter's renderer comes from. A hint to the
+   * browser, nothing more — no request is made, and nothing is sent.
+   */
+  var hints = [];
+  [
+    { href: origin },
+    { href: "https://www.gstatic.com" },
+    { href: "https://www.gstatic.com", crossorigin: true },
+  ].forEach(function (h) {
+    try {
+      var link = document.createElement("link");
+      link.rel = "preconnect";
+      link.href = h.href;
+      if (h.crossorigin) link.crossOrigin = "anonymous";
+      document.head.appendChild(link);
+      hints.push(link);
+    } catch (e) {
+      /* A page without a head is not a reason not to work. */
+    }
+  });
+
+  /**
    * Where the person is, as this page is willing to say.
    *
    * CALLED AT OPEN, NEVER AT CREATE, and that is the whole reason it is a
    * function rather than a value. `createIdeaWidget` runs once when the app
    * boots; by the time somebody presses the launcher they are four screens
    * away, and a context captured at boot would describe a screen nobody has
-   * been looking at for twenty minutes. The iframe is built fresh on every
-   * open (see `close`, which drops it), so re-reading here is enough — the
-   * only case it does not cover is navigating while the box is already open,
-   * which the dock deliberately allows because it covers nothing.
+   * been looking at for twenty minutes. A frame kept warm across opens is
+   * told again on every open (`whereNow`, posted by `show`), so a suggestion
+   * files the screen it was made on — the only case not covered is navigating
+   * while the box is already open, which the dock deliberately allows
+   * because it covers nothing.
    *
    * A HOST APP'S BUG MUST NOT STOP THE BOX OPENING. This calls into somebody
    * else's code, on a page we do not control, at the moment a person is asking
@@ -395,7 +442,7 @@ export function createIdeaWidget(options) {
    * they do. `route: false` turns the automatic half off for a page whose own
    * segments are the sensitive part.
    */
-  function frameUrlNow() {
+  function frameUrlNow(parked) {
     var url =
       origin +
       "/idea/" +
@@ -408,7 +455,19 @@ export function createIdeaWidget(options) {
     }
     var at = contextNow();
     if (at) url += "&at=" + encodeURIComponent(at);
+    // Built ahead of the click: the page holds no connection and takes no
+    // focus until it is opened.
+    if (parked) url += "&parked=1";
     return url;
+  }
+
+  /** Where the person is now, for a frame that was built earlier. */
+  function whereNow() {
+    var where = {};
+    if (opts.route !== false) where.route = routeOf(location);
+    var at = contextNow();
+    if (at) where.at = at;
+    return where;
   }
 
   /**
@@ -468,6 +527,7 @@ export function createIdeaWidget(options) {
     }
     var launcherEl = root && root.querySelector(".launcher");
     if (launcherEl) launcherEl.hidden = !allowed();
+    if (allowed()) armPreload();
     if (!decided) return;
     var queued = waiting;
     waiting = [];
@@ -592,6 +652,15 @@ export function createIdeaWidget(options) {
   var frame = null;
   var lastFocus = null;
 
+  // A frame may exist without being shown: built ahead (`warm`) or put away
+  // (`close` parks it). `shown` is the dock being on screen.
+  var shown = false;
+  var frameReady = false; // the page inside said avokaido:ready
+  var paintedAt = 0; // when the page inside said avokaido:painted
+  var openedAt = 0; // when the current show began
+  var openReported = false; // openMs has been told for this show
+  var readyTimer = null;
+
   function mount() {
     if (host) return;
     host = document.createElement("div");
@@ -670,6 +739,13 @@ export function createIdeaWidget(options) {
       ".dock.top-left     { left: 24px;  top: 88px }",
       ".dock.top-right    { right: 24px; top: 88px }",
       ".dock iframe { flex: 1; width: 100%; border: 0; display: block }",
+      /* KEPT, NOT SHOWN: a frame built ahead of the click, or put away. The
+         same recipe as ducking for a screenshot — transparent and taking no
+         clicks, never display or visibility, which stop the frame painting:
+         Flutter then never draws its first frame, and an off-screen frame is
+         throttled by the browser. `inert` (set in script) keeps it out of the
+         tab order and the accessibility tree. */
+      ".dock.parked { opacity: 0; pointer-events: none }",
       /* ROOM FOR THE CONSOLE, asked for by the page and granted here.
          A conversation wants a column; a list of runs beside a list of
          repositories does not fit in one. The page cannot do this itself —
@@ -723,8 +799,8 @@ export function createIdeaWidget(options) {
       "  .launcher { transition: transform .14s ease-out }",
       "  .launcher.settling { transition: left .32s cubic-bezier(.2,.8,.2,1),",
       "    top .32s cubic-bezier(.2,.8,.2,1), transform .14s ease-out }",
-      "  .dock { animation: rise .14s ease-out;",
-      "          transition: width .16s ease-out, height .16s ease-out }",
+      "  .dock.shown { animation: rise .14s ease-out }",
+      "  .dock { transition: width .16s ease-out, height .16s ease-out }",
       "  @keyframes rise { from { opacity: 0; transform: translateY(8px) }",
       "                    to   { opacity: 1; transform: none } }",
       "}",
@@ -745,10 +821,19 @@ export function createIdeaWidget(options) {
       }
       return;
     }
-    mount();
-    if (overlay) return;
-    lastFocus = document.activeElement;
+    if (shown) return;
+    // A frame built ahead is adopted as it is — already loaded, already
+    // drawn — and that is the whole point of building it ahead.
+    if (!overlay) buildFrame(false);
+    show();
+  }
 
+  /**
+   * The dock and its frame: shown at once (a click, nothing warm), or
+   * parked — built ahead, out of sight, until `show`.
+   */
+  function buildFrame(parked) {
+    mount();
     // NO BACKDROP, and that is the point of the shape. A dark sheet over the
     // page would make it unreadable and unclickable — the same loss as sending
     // somebody to another tab, only with the page still teasingly visible
@@ -757,7 +842,11 @@ export function createIdeaWidget(options) {
     // needs. It also means there is no backdrop to click, so Escape and the
     // close button are the whole exit.
     overlay = document.createElement("div");
-    overlay.className = "dock " + corner;
+    overlay.className = "dock " + corner + (parked ? " parked" : "");
+    if (parked) {
+      overlay.inert = true;
+      overlay.setAttribute("aria-hidden", "true");
+    }
     placeRemembered(overlay);
 
     var button = document.createElement("button");
@@ -771,8 +860,9 @@ export function createIdeaWidget(options) {
 
     frame = document.createElement("iframe");
     // Built here rather than once at create, so the context describes the
-    // screen somebody is on NOW. See `contextNow`.
-    frame.src = frameUrlNow();
+    // screen somebody is on NOW — and a frame built ahead is told again on
+    // every open. See `contextNow` and `whereNow`.
+    frame.src = frameUrlNow(parked);
     frame.title = label;
     frame.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
     // Deliberately NOT sandboxed. A sandbox without `allow-same-origin` gives
@@ -800,9 +890,80 @@ export function createIdeaWidget(options) {
     overlay.appendChild(button);
     overlay.appendChild(frame);
     root.appendChild(overlay);
-    markExpanded(true);
+    frameReady = false;
+    paintedAt = 0;
 
+    // A frame built ahead that never comes up — a network that dropped, an
+    // origin that is down — is dropped too, so the next open builds a fresh
+    // one rather than revealing a white box.
+    if (readyTimer) clearTimeout(readyTimer);
+    readyTimer = setTimeout(function () {
+      readyTimer = null;
+      if (!frameReady && !shown) discard();
+    }, READY_WITHIN_MS);
+  }
+
+  /** On screen: unparked, focused, and told where the person is now. */
+  function show() {
+    shown = true;
+    lastFocus = document.activeElement;
+    overlay.classList.remove("parked");
+    // Replays the rise every time it is shown, not only when it is built.
+    overlay.classList.remove("shown");
+    void overlay.offsetWidth;
+    overlay.classList.add("shown");
+    overlay.inert = false;
+    overlay.removeAttribute("aria-hidden");
+    markExpanded(true);
     document.addEventListener("keydown", onKey, true);
+    openedAt = Date.now();
+    openReported = paintedAt > 0;
+    // A frame not yet up hears this when it says it is ready (`onMessage`).
+    if (frameReady) tellOpen(paintedAt > 0 ? 0 : null);
+    focusFrame();
+  }
+
+  /**
+   * Into the frame, so the first keystroke lands in the chat. Allowed: it
+   * follows the press on the launcher. The page inside puts the caret in its
+   * composer itself.
+   */
+  function focusFrame() {
+    try {
+      if (frame) frame.focus();
+    } catch (e) {
+      /* Focus is a nicety, never a reason to fail an open. */
+    }
+  }
+
+  /**
+   * Tells the page it is on screen, and where the person is now — with how
+   * long the open took, once known (`openMs`: 0 when the frame was warm).
+   *
+   * The app's own sign-in, when it gave one, goes too: it is what lets the
+   * page show the workspace's own people what a build would cost. Posted to
+   * our origin only, so no other window can read it.
+   */
+  function tellOpen(openMs) {
+    var message = whereNow();
+    message.type = "avokaido:open";
+    if (openMs !== null) message.openMs = Math.max(0, Math.round(openMs));
+    postToFrame(message);
+    if (user && typeof user.getIdToken === "function") {
+      idTokenWithin(user.getIdToken, ID_TOKEN_WAIT_MS)
+        .then(function (token) {
+          if (token && shown) postToFrame({ type: "avokaido:visitor", token: token });
+        })
+        .catch(function () {});
+    }
+  }
+
+  function postToFrame(message) {
+    try {
+      if (frame && frame.contentWindow) frame.contentWindow.postMessage(message, origin);
+    } catch (e) {
+      /* A frame mid-navigation; the next open says it again. */
+    }
   }
 
   /** The launcher says whether its box is open, for a screen reader. */
@@ -820,20 +981,97 @@ export function createIdeaWidget(options) {
    * is the only distinction worth anything in that number.
    */
   function close(reason) {
-    if (!overlay) return;
+    if (!shown) return;
+    shown = false;
     // Cancels any capture restore still pending, so a timer cannot fire against
     // a box that has since been reopened and put it back to transparent.
     duck(false);
     document.removeEventListener("keydown", onKey, true);
-    overlay.remove();
-    overlay = null;
-    frame = null;
+    // KEPT FOR THE NEXT OPEN, out of sight and holding no connection — so
+    // reopening is instant and the conversation is where it was left. Thrown
+    // away only when it is finished with: a suggestion sent (the next open
+    // starts fresh), or the page asking to be closed.
+    if (reason === "submitted" || reason === "page") discard();
+    else park();
     markExpanded(false);
     // Focus goes back where it was. A dialog that dumps focus at the top of the
     // document leaves a keyboard user re-tabbing through the whole page.
     if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
     lastFocus = null;
     emit("closed", { reason: reason });
+  }
+
+  /** Out of sight, unclickable, out of the tab order — and told so, so the
+   *  page lets go of its connection. */
+  function park() {
+    if (!overlay) return;
+    overlay.classList.remove("shown", "covered");
+    overlay.classList.add("parked");
+    overlay.inert = true;
+    overlay.setAttribute("aria-hidden", "true");
+    postToFrame({ type: "avokaido:closed" });
+  }
+
+  /** Gone: the next open builds a fresh frame. */
+  function discard() {
+    if (readyTimer) {
+      clearTimeout(readyTimer);
+      readyTimer = null;
+    }
+    if (overlay) overlay.remove();
+    overlay = null;
+    frame = null;
+    frameReady = false;
+    paintedAt = 0;
+  }
+
+  /**
+   * Builds the chat ahead of the click — see `preload`. Only where the
+   * launcher may show, and never twice.
+   */
+  function warm() {
+    if (destroyed || overlay || preload === "off" || !allowed()) return;
+    buildFrame(true);
+  }
+
+  /**
+   * Once the launcher may show: `eager` builds now; `intent` waits for the
+   * page to go quiet for a few seconds (the launcher's own pointer, focus
+   * and touch are wired where it is drawn). Not on a page asking to save
+   * data, and not while the tab is in the background.
+   */
+  var armed = false;
+  function armPreload() {
+    if (armed || destroyed || preload === "off") return;
+    armed = true;
+    if (preload === "eager") {
+      warm();
+      return;
+    }
+    if (launcher === "none") return;
+    var idle = null;
+    var onVisible = function () {
+      if (document.visibilityState !== "visible") return;
+      document.removeEventListener("visibilitychange", onVisible);
+      clearTimeout(idle);
+      idle = setTimeout(function () {
+        var later =
+          window.requestIdleCallback || function (fn) { return setTimeout(fn, 1); };
+        later(function () {
+          var saving = navigator.connection && navigator.connection.saveData;
+          if (!saving) warm();
+        });
+      }, IDLE_WARM_MS);
+    };
+    // A page opened in a background tab waits until it is looked at: building
+    // a chat for a tab nobody is on is a download for nothing, and checking
+    // once and giving up would never build it at all.
+    document.addEventListener("visibilitychange", onVisible);
+    onVisible();
+    teardown.push(function () {
+      clearTimeout(idle);
+      document.removeEventListener("visibilitychange", onVisible);
+    });
   }
 
   /**
@@ -1218,7 +1456,27 @@ export function createIdeaWidget(options) {
     if (!frame || event.source !== frame.contentWindow) return;
     var type = event.data && event.data.type;
     if (type === "avokaido:ready") {
+      frameReady = true;
+      if (readyTimer) {
+        clearTimeout(readyTimer);
+        readyTimer = null;
+      }
+      // Opened before it was up: it is told now, and focused again — a frame
+      // focused before its document existed loses it.
+      if (shown) {
+        tellOpen(null);
+        focusFrame();
+      }
       emit("ready", {});
+    } else if (type === "avokaido:painted") {
+      paintedAt = Date.now();
+      var bootMs = Number(event.data.bootMs) || 0;
+      // Opened before it had drawn: now the open's real cost is known.
+      if (shown && !openReported) {
+        openReported = true;
+        tellOpen(paintedAt - openedAt);
+      }
+      emit("painted", { bootMs: bootMs });
     } else if (type === "avokaido:submitted") {
       emit("submitted", {});
       // STAYS OPEN WHEN THE PAGE ASKS IT TO, which is one case and a real one:
@@ -1235,6 +1493,12 @@ export function createIdeaWidget(options) {
       }, 2200);
     } else if (type === "avokaido:close") {
       close("page");
+    } else if (type === "avokaido:dismiss") {
+      // ESCAPE PRESSED INSIDE THE CHAT. Focus is in the frame once it opens,
+      // so the key never reaches this page's own listener; the page passes
+      // it on. Put away and kept, as Escape here would — not thrown away, as
+      // a page asking to be closed is.
+      close("escape");
     } else if (type === "avokaido:hide") {
       duck(true);
     } else if (type === "avokaido:show") {
@@ -1287,6 +1551,11 @@ export function createIdeaWidget(options) {
         button.textContent = label;
       }
       button.addEventListener("pointerdown", startLauncherDrag);
+      // INTENT: pointing at it, tabbing to it or touching it is the moment to
+      // build the chat — the press is a few hundred milliseconds behind.
+      button.addEventListener("pointerenter", warm);
+      button.addEventListener("focus", warm);
+      button.addEventListener("touchstart", warm, { passive: true });
       button.setAttribute("aria-expanded", "false");
       button.addEventListener("click", function () {
         // The click that ends a drag is the drop, not a press.
@@ -1294,7 +1563,7 @@ export function createIdeaWidget(options) {
         // A TOGGLE. The button that opened the box is the obvious way to put
         // it away again, and it is always in the same place — the × is in
         // whichever corner of the box the page's layout left it.
-        if (overlay) close("launcher");
+        if (shown) close("launcher");
         else open();
       });
       root.appendChild(button);
@@ -1321,8 +1590,11 @@ export function createIdeaWidget(options) {
     destroyed = true;
     waiting = [];
     close("api");
+    discard();
     for (var i = 0; i < teardown.length; i++) teardown[i]();
     teardown = [];
+    for (var j = 0; j < hints.length; j++) hints[j].remove();
+    hints = [];
     if (host) host.remove();
     host = null;
     root = null;
@@ -1334,6 +1606,12 @@ export function createIdeaWidget(options) {
     },
     close: function (reason) {
       close(reason || "api");
+    },
+    /** Builds the chat now, out of sight, so the next open is instant. For
+     *  a host app that knows better than `preload` when it will be wanted. */
+    warm: function () {
+      if (decided) warm();
+      else waiting.push(warm);
     },
     destroy: destroy,
     /** Whether the button would show for this visitor on this page right
