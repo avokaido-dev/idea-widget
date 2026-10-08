@@ -44,10 +44,21 @@ whatever origin it likes, which is what the daily limits are for. Configure the
 list in **Feature ideas → Embed the suggestion widget**; leaving it empty keeps
 the link working anywhere, on a smaller separate allowance.
 
-### Pass it in, per environment
+### One link for every build
 
-Not for secrecy — so that staging and production use **separate links**, and so a
-link can be replaced without editing code:
+Use **one link, and the same key, in every build**: production, staging and
+every preview. Your release promotes the code from staging to production
+unchanged, and the key goes with it. So a separate staging key would become
+production's key at the next release, and production would lose its button if
+that link does not list production's address.
+
+Instead, list every address your app is served from in the one link's origins,
+in **Feature ideas → Embed the suggestion widget**. The widget sends the origin
+of the page it is on, and your inbox labels a suggestion from staging or a
+preview "From stage" or "From preview".
+
+If you would rather not edit code to change the key, pass it in at build time,
+with the same value in every build:
 
 ```dart
 const _key = String.fromEnvironment('IDEA_WIDGET_KEY');
@@ -58,8 +69,14 @@ if (kIsWeb && _key.isNotEmpty) {
 ```
 
 ```sh
+# the same key for every build
 flutter build web --dart-define=IDEA_WIDGET_KEY=avk_...
 ```
+
+To replace the key, use **Rotate key…** on the link. It issues a new key. The
+old key keeps working on every address it has been seen on until the new key
+is seen there too — 30 days at most — so production keeps its button while the
+new key is promoted to it.
 
 ### From your own button
 

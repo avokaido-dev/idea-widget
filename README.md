@@ -88,22 +88,48 @@ daily allowance. That allowance is a separate budget from your configured
 origins' one, so un-attested traffic cannot exhaust the allowance your real embed
 depends on, and vice versa.
 
-### Configure it per environment, not because it is secret
+### One link for every environment
 
-Hardcoding one key everywhere is worth avoiding for a duller reason than secrecy:
-you want **separate links for staging and production** — so a test suggestion
-does not look like a real one in your inbox — and you want to be able to replace
-a link without editing code.
+Use **one link, and the same key, everywhere**: production, staging and every
+preview. Commit the key once. Your release promotes the code from staging to
+production unchanged, and the key goes with it. So a separate staging key would
+become production's key at the next release, and production would lose its
+button if that link does not list production's address.
+
+Instead, put every address the product is served from on the one link, in its
+list of origins (**Feature ideas → Embed the suggestion widget**, see
+[Restricting where it works](#restricting-where-it-works)):
+
+```
+https://app.example.com
+https://staging.app.example.com
+https://preview.app.example.com
+```
+
+A link with an empty list already works on all of them.
+
+You do not need a second link to tell a test from a real request. The widget
+sends the origin of the page it is on (see [What it sends](#what-it-sends)), and
+your inbox labels a suggestion from staging or a preview "From stage" or "From
+preview".
+
+If you would rather not edit code to change the key, read it from your build's
+environment. Give it the same value in every environment:
 
 ```sh
-# Flutter web
+# Flutter web — the same key for every build
 flutter build web --dart-define=IDEA_WIDGET_KEY=avk_...
 ```
 
 ```js
-// npm, from your own build's environment
+// npm, from your own build's environment — the same key for every build
 createIdeaWidget({ key: process.env.IDEA_WIDGET_KEY });
 ```
+
+To replace the key, use **Rotate key…** on the link. It issues a new key. The
+old key keeps working on every address it has been seen on until the new key
+is seen there too — 30 days at most. So you commit the new key and promote it as
+usual, and production keeps its button while the release is on its way.
 
 ### Or install it
 
@@ -494,7 +520,9 @@ The `data-*` attributes, the `avokaido:*` events and the
 It is sent because the framed page cannot find out for itself: a cross-origin
 frame may not read its parent's location, and one link is deliberately shared
 by your staging and production, so without it the two arrive indistinguishable
-in one list.
+in one list. With it, your inbox labels a suggestion from staging or a preview
+"From stage" or "From preview". See
+[One link for every environment](#one-link-for-every-environment).
 
 **The route** — `location.pathname` plus the hash, so `/#/calendar` or
 `/teams/overview`. Which screen somebody was on is the first thing anybody
