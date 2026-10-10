@@ -795,14 +795,18 @@ function createIdeaWidget(options) {
          takes the arrow keys. Above the grip, so the top edge resizes rather
          than drags. */
       ".sizer { position: absolute; z-index: 2; touch-action: none }",
-      ".sizer.n  { top: 0; left: 14px; right: 44px; height: 6px; cursor: ns-resize }",
-      ".sizer.s  { bottom: 0; left: 14px; right: 14px; height: 6px; cursor: ns-resize }",
-      ".sizer.w  { left: 0; top: 14px; bottom: 14px; width: 6px; cursor: ew-resize }",
-      ".sizer.e  { right: 0; top: 44px; bottom: 14px; width: 6px; cursor: ew-resize }",
-      ".sizer.nw { left: 0; top: 0; width: 16px; height: 16px; cursor: nwse-resize }",
-      ".sizer.sw { left: 0; bottom: 0; width: 16px; height: 16px; cursor: nesw-resize }",
-      ".sizer.se { right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize }",
-      ".sizer.nw::after { content: ''; position: absolute; left: 4px; top: 4px;",
+      /* The corners are 20px and drawn above the edges, so a grab near a
+         corner moves both edges — which is what somebody reaching for a
+         corner means — rather than whichever strip happened to be on top. */
+      ".sizer.n  { top: 0; left: 20px; right: 44px; height: 6px; cursor: ns-resize }",
+      ".sizer.s  { bottom: 0; left: 20px; right: 20px; height: 6px; cursor: ns-resize }",
+      ".sizer.w  { left: 0; top: 20px; bottom: 20px; width: 6px; cursor: ew-resize }",
+      ".sizer.e  { right: 0; top: 44px; bottom: 20px; width: 6px; cursor: ew-resize }",
+      ".sizer.nw, .sizer.sw, .sizer.se { width: 20px; height: 20px; z-index: 3 }",
+      ".sizer.nw { left: 0; top: 0; cursor: nwse-resize }",
+      ".sizer.sw { left: 0; bottom: 0; cursor: nesw-resize }",
+      ".sizer.se { right: 0; bottom: 0; cursor: nwse-resize }",
+      ".sizer.nw::after { content: ''; position: absolute; left: 5px; top: 5px;",
       "  width: 7px; height: 7px; border-left: 2px solid rgba(35,21,2,.4);",
       "  border-top: 2px solid rgba(35,21,2,.4); border-top-left-radius: 4px;",
       "  opacity: 0 }",
