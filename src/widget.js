@@ -738,6 +738,13 @@ export function createIdeaWidget(options) {
       ".dock.bottom-right { right: 24px; bottom: 88px }",
       ".dock.top-left     { left: 24px;  top: 88px }",
       ".dock.top-right    { right: 24px; top: 88px }",
+      /* A CORNER BOX IS 88 PIXELS OFF ITS EDGE, so it may only be that much
+         less than the viewport tall — not 32 less, which on a short viewport
+         (a browser zoomed to 200%, a laptop with the bookmarks bar open) put
+         its top, the grip and the close button above the window. Once placed
+         by a drag or a resize it is clamped to the window instead. */
+      ".dock { max-height: calc(100vh - 104px) }",
+      ".dock.placed { max-width: calc(100vw - 16px); max-height: calc(100vh - 16px) }",
       ".dock iframe { flex: 1; width: 100%; border: 0; display: block }",
       /* KEPT, NOT SHOWN: a frame built ahead of the click, or put away. The
          same recipe as ducking for a screenshot — transparent and taking no
@@ -765,6 +772,30 @@ export function createIdeaWidget(options) {
       "  z-index: 1; cursor: grab;",
       "}",
       ".grip:active { cursor: grabbing }",
+      /* RESIZING, from any edge and three of the corners — not the top right,
+         which is the close button. Invisible strips with the cursor that says
+         what they do, as on any window; the top-left corner, the one to pull
+         on a box in the bottom-right corner, shows a bracket on hover and
+         takes the arrow keys. Above the grip, so the top edge resizes rather
+         than drags. */
+      ".sizer { position: absolute; z-index: 2; touch-action: none }",
+      ".sizer.n  { top: 0; left: 14px; right: 44px; height: 6px; cursor: ns-resize }",
+      ".sizer.s  { bottom: 0; left: 14px; right: 14px; height: 6px; cursor: ns-resize }",
+      ".sizer.w  { left: 0; top: 14px; bottom: 14px; width: 6px; cursor: ew-resize }",
+      ".sizer.e  { right: 0; top: 44px; bottom: 14px; width: 6px; cursor: ew-resize }",
+      ".sizer.nw { left: 0; top: 0; width: 16px; height: 16px; cursor: nwse-resize }",
+      ".sizer.sw { left: 0; bottom: 0; width: 16px; height: 16px; cursor: nesw-resize }",
+      ".sizer.se { right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize }",
+      ".sizer.nw::after { content: ''; position: absolute; left: 4px; top: 4px;",
+      "  width: 7px; height: 7px; border-left: 2px solid rgba(35,21,2,.4);",
+      "  border-top: 2px solid rgba(35,21,2,.4); border-top-left-radius: 4px;",
+      "  opacity: 0 }",
+      ".dock:hover .sizer.nw::after, .sizer.nw:focus-visible::after { opacity: 1 }",
+      ".sizer.nw:focus-visible { outline: 2px solid #2c4112; outline-offset: -2px;",
+      "  border-radius: 6px }",
+      ".dock.sizing { user-select: none; transition: none !important }",
+      ".dock.sizing iframe { pointer-events: none }",
+      ".dock.covered .sizer { pointer-events: none }",
       ".dock.dragging { user-select: none }",
       /* While a drag is running the frame must not swallow the pointer:
          mousemove over a cross-origin iframe goes to the iframe's document,
@@ -787,10 +818,19 @@ export function createIdeaWidget(options) {
       ".dock.covered .grip { pointer-events: none }",
       /* On a phone there is no page left to keep visible, so it takes the
          screen — a 384px card floating over a 390px viewport is a lightbox
-         with wasted margins. */
-      "@media (max-width: 560px) {",
-      "  .dock { inset: 0; width: auto; height: auto;",
-      "          max-width: none; max-height: none; border-radius: 0 }",
+         with wasted margins. THE SAME ON A SHORT VIEWPORT, which is what a
+         browser zoomed to 200% or more is: a card a few hundred pixels tall
+         is a conversation nobody can read, over a page nobody can see.
+         IMPORTANT, because a box somebody dragged or resized carries its
+         position and size inline, and inline beats a class — without it the
+         one person who moved the box never got the full screen. Nothing to
+         drag or resize there, so the grip and the handles go. */
+      "@media (max-width: 560px), (max-height: 440px) {",
+      "  .dock, .dock.placed, .dock.wide { inset: 0 !important;",
+      "          width: auto !important; height: auto !important;",
+      "          max-width: none !important; max-height: none !important;",
+      "          border-radius: 0 }",
+      "  .grip, .sizer { display: none }",
       "}",
       "@media (prefers-reduced-motion: no-preference) {",
       /* The glide into a corner, and the lift when it is picked up. Only
@@ -847,6 +887,7 @@ export function createIdeaWidget(options) {
       overlay.inert = true;
       overlay.setAttribute("aria-hidden", "true");
     }
+    applyRememberedSize(overlay);
     placeRemembered(overlay);
 
     var button = document.createElement("button");
@@ -887,6 +928,26 @@ export function createIdeaWidget(options) {
     grip.addEventListener("pointerdown", startDrag);
 
     overlay.appendChild(grip);
+    SIZERS.forEach(function (dir) {
+      var sizer = document.createElement("div");
+      sizer.className = "sizer " + dir;
+      sizer.addEventListener("pointerdown", function (e) {
+        startResize(e, dir);
+      });
+      // ONE OF THEM TAKES THE KEYBOARD, so resizing is not a pointer-only
+      // feature: the corner a box in the bottom right is pulled from.
+      if (dir === "nw") {
+        sizer.tabIndex = 0;
+        sizer.setAttribute("role", "button");
+        sizer.setAttribute(
+          "aria-label",
+          "Resize the suggestion box: arrow keys make it larger or smaller"
+        );
+        sizer.title = "Drag to resize";
+        sizer.addEventListener("keydown", onSizerKey);
+      }
+      overlay.appendChild(sizer);
+    });
     overlay.appendChild(button);
     overlay.appendChild(frame);
     root.appendChild(overlay);
@@ -1137,6 +1198,14 @@ export function createIdeaWidget(options) {
   function resize(wide) {
     if (!overlay) return;
     overlay.classList.toggle("wide", wide);
+    // A size somebody chose is the conversation's: the console asks for its
+    // own room, and gets the chosen size back when it lets go.
+    if (wide) {
+      overlay.style.width = "";
+      overlay.style.height = "";
+    } else {
+      applyRememberedSize(overlay);
+    }
     // After the class has taken effect, so the clamp measures the new size
     // rather than the one being left behind.
     requestAnimationFrame(function () {
@@ -1186,6 +1255,7 @@ export function createIdeaWidget(options) {
     el.style.top = at.top + "px";
     el.style.right = "auto";
     el.style.bottom = "auto";
+    el.classList.add("placed");
     return at;
   }
 
@@ -1237,6 +1307,180 @@ export function createIdeaWidget(options) {
     document.addEventListener("pointermove", move, true);
     document.addEventListener("pointerup", drop, true);
     document.addEventListener("pointercancel", drop, true);
+  }
+
+  /**
+   * Resizing the box, and remembering the size.
+   *
+   * A FIXED 384 BY 588 WAS RIGHT FOR NOBODY IN PARTICULAR. A long answer wants
+   * a taller box, a wide screen has room for a wider one, and somebody with
+   * their browser zoomed in wants it smaller so the page they are describing
+   * is still there. Only the person can say which, so they drag an edge.
+   *
+   * The box is taken out of its corner and placed by left/top for the
+   * duration, like a drag, so every edge can move. Clamped every move: never
+   * smaller than [MIN_W] by [MIN_H] (the conversation stops being one), never
+   * past the window less a margin. The size is remembered per host page, as
+   * the position is, and fitted to the window again whenever it changes.
+   */
+  var SIZE_KEY = "avokaido.ideas.size";
+  var SIZERS = ["n", "s", "w", "e", "nw", "sw", "se"];
+  var MIN_W = 300;
+  var MIN_H = 380;
+  var MARGIN = 8;
+  var KEY_STEP = 24;
+
+  function sizeLimits() {
+    return {
+      w: Math.max(MIN_W, window.innerWidth - 2 * MARGIN),
+      h: Math.max(MIN_H, window.innerHeight - 2 * MARGIN),
+    };
+  }
+
+  function clampSize(w, h) {
+    var max = sizeLimits();
+    return {
+      w: Math.round(Math.min(Math.max(w, MIN_W), max.w)),
+      h: Math.round(Math.min(Math.max(h, MIN_H), max.h)),
+    };
+  }
+
+  function applyRememberedSize(el) {
+    var saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(SIZE_KEY) || "null");
+    } catch (e) {
+      /* A browser with storage blocked simply does not remember. */
+    }
+    if (!saved || typeof saved.w !== "number" || typeof saved.h !== "number") {
+      el.style.width = "";
+      el.style.height = "";
+      return;
+    }
+    var size = clampSize(saved.w, saved.h);
+    el.style.width = size.w + "px";
+    el.style.height = size.h + "px";
+  }
+
+  /** A remembered size the window has since grown too small for. */
+  function fitSize(el) {
+    if (!el.style.width) return;
+    var size = clampSize(parseFloat(el.style.width), parseFloat(el.style.height));
+    el.style.width = size.w + "px";
+    el.style.height = size.h + "px";
+  }
+
+  /**
+   * The box after moving the [dir] edges by [dx], [dy] from [start], kept
+   * whole inside the window. The opposite edges stay where they were.
+   */
+  function resized(start, dir, dx, dy) {
+    var max = sizeLimits();
+    var left = start.left;
+    var top = start.top;
+    var w = start.width;
+    var h = start.height;
+    var right = start.left + start.width;
+    var bottom = start.top + start.height;
+    if (dir.indexOf("e") >= 0) w = start.width + dx;
+    if (dir.indexOf("w") >= 0) w = start.width - dx;
+    if (dir.indexOf("s") >= 0) h = start.height + dy;
+    if (dir.indexOf("n") >= 0) h = start.height - dy;
+    w = Math.min(Math.max(w, MIN_W), max.w);
+    h = Math.min(Math.max(h, MIN_H), max.h);
+    if (dir.indexOf("w") >= 0) left = right - w;
+    if (dir.indexOf("n") >= 0) top = bottom - h;
+    // Pulled past the window: the moving edge stops at the margin, and the
+    // size gives way rather than the opposite edge.
+    if (left < MARGIN) {
+      if (dir.indexOf("w") >= 0) w -= MARGIN - left;
+      left = MARGIN;
+    }
+    if (top < MARGIN) {
+      if (dir.indexOf("n") >= 0) h -= MARGIN - top;
+      top = MARGIN;
+    }
+    if (left + w > window.innerWidth - MARGIN) w = window.innerWidth - MARGIN - left;
+    if (top + h > window.innerHeight - MARGIN) h = window.innerHeight - MARGIN - top;
+    return {
+      left: Math.round(left),
+      top: Math.round(top),
+      w: Math.round(Math.max(w, Math.min(MIN_W, max.w))),
+      h: Math.round(Math.max(h, Math.min(MIN_H, max.h))),
+    };
+  }
+
+  function setBox(box) {
+    overlay.style.width = box.w + "px";
+    overlay.style.height = box.h + "px";
+    overlay.style.left = box.left + "px";
+    overlay.style.top = box.top + "px";
+    overlay.style.right = "auto";
+    overlay.style.bottom = "auto";
+    overlay.classList.add("placed");
+  }
+
+  function rememberBox(box) {
+    try {
+      // The console's wide box is its own; only the conversation's is kept.
+      if (!overlay.classList.contains("wide")) {
+        localStorage.setItem(SIZE_KEY, JSON.stringify({ w: box.w, h: box.h }));
+      }
+      localStorage.setItem(STORE_KEY, JSON.stringify({ left: box.left, top: box.top }));
+    } catch (err) {
+      /* Not remembering is a smaller problem than throwing while resizing. */
+    }
+  }
+
+  function startResize(event, dir) {
+    if (event.button !== 0 || !overlay) return;
+    event.preventDefault();
+    event.stopPropagation();
+    var r = overlay.getBoundingClientRect();
+    var start = { left: r.left, top: r.top, width: r.width, height: r.height };
+    var x0 = event.clientX;
+    var y0 = event.clientY;
+    overlay.classList.add("sizing");
+    setBox({ left: start.left, top: start.top, w: start.width, h: start.height });
+
+    function move(e) {
+      setBox(resized(start, dir, e.clientX - x0, e.clientY - y0));
+    }
+    function drop(e) {
+      document.removeEventListener("pointermove", move, true);
+      document.removeEventListener("pointerup", drop, true);
+      document.removeEventListener("pointercancel", drop, true);
+      if (!overlay) return;
+      overlay.classList.remove("sizing");
+      var box = resized(start, dir, e.clientX - x0, e.clientY - y0);
+      setBox(box);
+      rememberBox(box);
+    }
+    // Capture, on the document, for the same reason as the drag.
+    document.addEventListener("pointermove", move, true);
+    document.addEventListener("pointerup", drop, true);
+    document.addEventListener("pointercancel", drop, true);
+  }
+
+  /** The top-left corner by keyboard: left and up grow, right and down shrink. */
+  function onSizerKey(event) {
+    var step = {
+      ArrowLeft: [-KEY_STEP, 0],
+      ArrowRight: [KEY_STEP, 0],
+      ArrowUp: [0, -KEY_STEP],
+      ArrowDown: [0, KEY_STEP],
+    }[event.key];
+    if (!step || !overlay) return;
+    event.preventDefault();
+    var r = overlay.getBoundingClientRect();
+    var box = resized(
+      { left: r.left, top: r.top, width: r.width, height: r.height },
+      "nw",
+      step[0],
+      step[1]
+    );
+    setBox(box);
+    rememberBox(box);
   }
 
   /**
@@ -1400,6 +1644,7 @@ export function createIdeaWidget(options) {
    * classes and reflows on its own.
    */
   function reclamp() {
+    if (overlay) fitSize(overlay);
     if (!overlay || !overlay.style.left) return;
     placeAt(
       overlay,

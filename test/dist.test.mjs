@@ -136,6 +136,60 @@ describe("the dock", () => {
   it("takes the whole screen where there is no page left to keep visible", () => {
     assert.match(dist, /@media \(max-width: 560px\)/);
   });
+
+  it("takes the whole screen on a short viewport too: a browser zoomed in", () => {
+    assert.match(dist, /@media \(max-width: 560px\), \(max-height: 440px\)/);
+  });
+
+  it("goes full screen even after being dragged or resized", () => {
+    // Inline left/top/width/height beat a class, so the rule must be important.
+    assert.match(dist, /inset: 0 !important/);
+    assert.match(dist, /width: auto !important; height: auto !important/);
+  });
+
+  it("keeps a corner box's top inside a short window", () => {
+    // 88 off the edge it sits on, so 104 less than the viewport at most.
+    assert.match(dist, /\.dock \{ max-height: calc\(100vh - 104px\) \}/);
+  });
+});
+
+describe("resizing the dock", () => {
+  it("has handles on every edge and every corner but the close button's", () => {
+    assert.match(core, /var SIZERS = \["n", "s", "w", "e", "nw", "sw", "se"\];/);
+    assert.doesNotMatch(core, /"ne"/);
+  });
+
+  it("resizes from the keyboard too", () => {
+    assert.match(core, /sizer\.tabIndex = 0;/);
+    assert.match(core, /ArrowLeft: \[-KEY_STEP, 0\]/);
+  });
+
+  it("drops the frame's pointer events while resizing", () => {
+    assert.match(dist, /\.dock\.sizing iframe \{ pointer-events: none \}/);
+  });
+
+  it("never follows the pointer through an easing", () => {
+    assert.match(dist, /\.dock\.sizing \{ user-select: none; transition: none !important \}/);
+  });
+
+  it("has a floor, so a conversation stays one", () => {
+    assert.match(core, /var MIN_W = 300;/);
+    assert.match(core, /var MIN_H = 380;/);
+  });
+
+  it("remembers the size, per host page, and fits it to the window again", () => {
+    assert.match(dist, /"avokaido\.ideas\.size"/);
+    assert.match(core, /if \(overlay\) fitSize\(overlay\);/);
+  });
+
+  it("gives the console its own room and the conversation its size back", () => {
+    assert.match(core, /if \(wide\) \{\n\s+overlay\.style\.width = "";/);
+  });
+
+  it("hides the handles under the page's scrim and on a full screen", () => {
+    assert.match(dist, /\.dock\.covered \.sizer \{ pointer-events: none \}/);
+    assert.match(dist, /\.grip, \.sizer \{ display: none \}/);
+  });
 });
 
 describe("the launcher", () => {
