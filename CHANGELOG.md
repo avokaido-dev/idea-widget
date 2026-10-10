@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.10.0
+
+**The box can be resized, and a zoomed-in browser gets a box it can use.**
+
+- **Resize it** from any edge, or from the bottom corners and the top-left
+  one; the top right is the close button. The top-left corner, the one to
+  pull on a box in the bottom right, shows a bracket on hover and takes the
+  arrow keys (left and up grow it, right and down shrink it). Never smaller
+  than 300 by 380, never past the window. The size is remembered per host
+  page, like the position, and fitted to the window again when it changes.
+  The console's wide box is its own and leaves the chosen size alone.
+- **Full screen on a short viewport too**, not only a narrow one: below 440
+  pixels tall — which is what a browser zoomed to 200% or more is — the box
+  takes the screen, as it does on a phone.
+- **Full screen even after a drag.** A box somebody had moved carried its
+  position inline, which beat the full-screen rule, so the one person who
+  had moved it never got the full screen on a phone.
+- **A corner box's top stays in the window.** It sits 88 pixels off the
+  edge, but its height was only capped at the viewport less 32, so on a short
+  window its header and close button went above the top.
+
+Pages built for 384 by 588 should handle any size from 300 by 380 up. The
+hosted interview does from cloud_services' matching release.
+
 ## 1.9.0
 
 **The chat opens in a blink, and is where you left it.** The chat is a whole
