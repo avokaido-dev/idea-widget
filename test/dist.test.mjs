@@ -192,6 +192,60 @@ describe("resizing the dock", () => {
   });
 });
 
+describe("the preview's panel", () => {
+  it("is centred, at most 1200 by 820, and wins over a moved or resized box", () => {
+    // Inline left/top/width/height beat a class, as on a phone.
+    assert.match(dist, /\.dock\.panel \{ z-index: 3; inset: 0 !important; margin: auto;/);
+    assert.match(dist, /width: min\(1200px, 94vw\) !important; height: min\(820px, 90vh\) !important;/);
+  });
+
+  it("dims the page behind it, launcher included", () => {
+    assert.match(dist, /\.scrim \{ position: fixed; inset: 0; z-index: 2;/);
+    assert.match(dist, /"\.launcher \{",\s+"  position: fixed; z-index: 1;/);
+  });
+
+  it("does not close on a click beside it", () => {
+    // The preview has its own close; a click on the scrim is not "done".
+    assert.equal(/scrim\.addEventListener|scrim\.onclick/.test(core), false);
+  });
+
+  it("is never put up behind a box that is not showing", () => {
+    // A scrim over a parked box is a dimmed page with nothing on it to close.
+    assert.match(core, /if \(on\) \{\s+if \(!overlay \|\| !shown\) return;/);
+  });
+
+  it("goes when the box closes, so the next open is the dock again", () => {
+    assert.match(core, /duck\(false\);[\s\S]{0,400}widen\(false\);\s+document\.removeEventListener\("keydown", onKey, true\);/);
+  });
+
+  it("leaves the box underneath alone, so narrow hands back what was there", () => {
+    // Narrowing is taking the class off; nothing inline is cleared or reset.
+    const body = core.match(/function widen\(on\) \{[\s\S]*?\n  \}\n/)[0];
+    assert.equal(/style\.(width|height|left|top)\s*=/.test(body), false);
+    assert.match(body, /overlay\.classList\.remove\("panel"\)/);
+  });
+
+  it("never clamps the box against the panel's size", () => {
+    // Measured under the panel, a box at the right of a wide window would be
+    // moved to fit 1200 pixels and come back from narrow somewhere else.
+    assert.match(core, /function reclamp\(\) \{[\s\S]*?overlay\.classList\.contains\("panel"\)\) return;/);
+    assert.match(core, /if \(!overlay\.style\.left \|\| overlay\.classList\.contains\("panel"\)\) return;/);
+  });
+
+  it("hides the grip and the handles, which would store a position measured against it", () => {
+    assert.match(dist, /\.dock\.panel \.grip, \.dock\.panel \.sizer \{ display: none \}/);
+  });
+
+  it("is the same full screen as everything else on a phone, with no scrim", () => {
+    assert.match(dist, /\.dock, \.dock\.placed, \.dock\.wide, \.dock\.panel \{ inset: 0 !important;/);
+    assert.match(dist, /"  \.scrim \{ display: none \}"/);
+  });
+
+  it("ducks its scrim for a screenshot along with the box", () => {
+    assert.match(core, /scrim\.style\.opacity = overlay\.style\.opacity;/);
+  });
+});
+
 describe("the launcher", () => {
   it("does not move until the pointer has left a few pixels of slop", () => {
     // Without the slop a click with a shaky hand becomes a one-pixel drag, and
@@ -396,6 +450,8 @@ describe("messages from the framed page", () => {
     "show",
     "expand",
     "collapse",
+    "wide",
+    "narrow",
     "cover",
     "uncover",
   ]) {
