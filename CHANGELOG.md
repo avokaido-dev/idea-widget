@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.11.0
+
+**Room for a preview of the change.** The framed page can now show a
+clickable preview of a suggested change before it is sent, and a preview
+wants something like the size it will run at — more than the console's 768
+by 640 in a corner. So the page can ask for a centred panel:
+
+- **`avokaido:wide`** makes the box a panel in the middle of the window,
+  `min(1200px, 94vw)` by `min(820px, 90vh)`, over a dim scrim that covers
+  your page and the launcher. A click on the scrim does nothing; the preview
+  has its own close. The × and Escape still close the whole box.
+- **`avokaido:narrow`** hands back exactly the box that was there before —
+  the conversation's size or the console's, in its corner or wherever it had
+  been dragged or resized to. Nothing about that box is changed by the panel,
+  and it is not re-clamped against the panel's size while it is up.
+- **Closing drops the panel**, so the next open is the box as it was before
+  the preview, with no scrim. A panel is never put up behind a box that is
+  not showing.
+- **On a phone**, or any viewport where the box is already full screen, the
+  panel is the same full screen and there is no scrim; `narrow` still puts
+  the state right.
+- Ducking for a screenshot takes the scrim with the box.
+
+Nothing changes on your page until the framed page sends `avokaido:wide`,
+which the hosted interview does from cloud_services' matching release. A
+page that sends it to an older widget gets the box it already had.
+
 ## 1.10.0
 
 **The box can be resized, and a zoomed-in browser gets a box it can use.**

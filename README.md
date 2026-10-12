@@ -450,6 +450,14 @@ on the hosted side.
   what somebody describing a screen actually needs, and the whole advantage over
   sending them to a link. So Escape, the × and the launcher itself are the
   only exits — pressing the launcher again puts the box away.
+- **Except for a preview.** When the interview shows a clickable preview of
+  the suggested change, the box becomes a centred panel
+  (`min(1200px, 94vw)` × `min(820px, 90vh)`) over a dim scrim that covers your
+  page and the launcher, for as long as the preview is up. A click on the
+  scrim does nothing — the preview has its own close — and the box goes back
+  to exactly where and how big it was when the preview closes. Escape and the
+  × still close it; closing drops the panel. On a phone the box is already the
+  whole screen, and nothing changes.
 - **It can be moved.** A corner is still *somewhere*, and on a page with a
   left-hand nav the left corner is over the nav. There is an invisible drag grip
   along the dock's title row; the position is remembered per browser and
@@ -459,7 +467,8 @@ on the hosted side.
   follows it there. A press that barely moves is still a press. The corner is
   remembered per browser and wins over `data-position`, which is only where it
   starts.
-- **384×588**, clamped to the viewport, full-screen under 560px.
+- **384×588**, clamped to the viewport, full-screen under 560px wide or 440px
+  tall.
 - **One global**, `window.avokaido`. One `<div>`. Three window listeners, all
   removed by `destroy()`.
 

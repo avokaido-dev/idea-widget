@@ -650,6 +650,7 @@ export function createIdeaWidget(options) {
   var root = null;
   var overlay = null;
   var frame = null;
+  var scrim = null; // only while the page shows a preview — see `widen`
   var lastFocus = null;
 
   // A frame may exist without being shown: built ahead (`warm`) or put away
@@ -762,6 +763,34 @@ export function createIdeaWidget(options) {
          Both dimensions stay under the viewport clamps above, so the wide
          box on a laptop is the laptop's width minus its margins. */
       ".dock.wide { width: 768px; height: 640px }",
+      /* THE ONE TIME IT IS A LIGHTBOX: a preview of the suggested change,
+         asked for by the page with `avokaido:wide`. A change somebody is
+         about to send is worth trying at something like the size it will
+         run at, and 768 pixels of a corner is not that — so for as long as
+         the preview is up, the box is centred and the page behind it is
+         dimmed. The page is not what is being looked at then; the preview
+         of what it would become is.
+         IMPORTANT, for the reason the phone rule below gives: a box that was
+         moved or resized carries left/top/width/height inline. Those stay
+         where they are, underneath, which is what lets `avokaido:narrow`
+         hand back exactly the box that was there — the conversation's size
+         or the console's, wherever it had been put.
+         Not `.wide`, which is the console's (`avokaido:expand`) and older
+         than this message's name. The grip and the handles go: a centred
+         panel is not somewhere a box was put, and dragging it would store a
+         position measured against the wrong size. */
+      ".dock.panel { z-index: 3; inset: 0 !important; margin: auto;",
+      "  width: min(1200px, 94vw) !important; height: min(820px, 90vh) !important;",
+      "  max-width: none !important; max-height: none !important;",
+      /* In one frame: it leaves its corner for the middle of the window
+         either way, and a box teleporting and then growing reads as two
+         things happening. The scrim fading in is the only motion. */
+      "  transition: none }",
+      ".dock.panel .grip, .dock.panel .sizer { display: none }",
+      /* Under the panel and over everything else of ours, the launcher
+         included. A click on it does nothing: the preview has its own close,
+         and a click beside a preview is not somebody saying they are done. */
+      ".scrim { position: fixed; inset: 0; z-index: 2; background: rgba(10,27,13,.48) }",
       /* THE DRAG HANDLE IS INVISIBLE, and lies over the page's own title row.
          A visible strip would cost 30 of 588 pixels and add a second header
          above the one the page already draws — while the row it covers is
@@ -828,13 +857,16 @@ export function createIdeaWidget(options) {
          IMPORTANT, because a box somebody dragged or resized carries its
          position and size inline, and inline beats a class — without it the
          one person who moved the box never got the full screen. Nothing to
-         drag or resize there, so the grip and the handles go. */
+         drag or resize there, so the grip and the handles go.
+         The preview's panel too: the screen is already all box, so there is
+         nothing to centre it in and nothing left for a scrim to dim. */
       "@media (max-width: 560px), (max-height: 440px) {",
-      "  .dock, .dock.placed, .dock.wide { inset: 0 !important;",
+      "  .dock, .dock.placed, .dock.wide, .dock.panel { inset: 0 !important;",
       "          width: auto !important; height: auto !important;",
       "          max-width: none !important; max-height: none !important;",
       "          border-radius: 0 }",
       "  .grip, .sizer { display: none }",
+      "  .scrim { display: none }",
       "}",
       "@media (prefers-reduced-motion: no-preference) {",
       /* The glide into a corner, and the lift when it is picked up. Only
@@ -845,8 +877,10 @@ export function createIdeaWidget(options) {
       "    top .32s cubic-bezier(.2,.8,.2,1), transform .14s ease-out }",
       "  .dock.shown { animation: rise .14s ease-out }",
       "  .dock { transition: width .16s ease-out, height .16s ease-out }",
+      "  .scrim { animation: dim .16s ease-out }",
       "  @keyframes rise { from { opacity: 0; transform: translateY(8px) }",
       "                    to   { opacity: 1; transform: none } }",
+      "  @keyframes dim { from { opacity: 0 } }",
       "}",
     ].join("\n");
     return el;
@@ -884,7 +918,8 @@ export function createIdeaWidget(options) {
     // behind it. Nothing here covers the host page, so it stays usable while
     // the conversation is open, which is what somebody describing a screen
     // needs. It also means there is no backdrop to click, so Escape and the
-    // close button are the whole exit.
+    // close button are the whole exit. (One exception, asked for by the page
+    // and taken away again by it: a preview of the change — see `widen`.)
     overlay = document.createElement("div");
     overlay.className = "dock " + corner + (parked ? " parked" : "");
     if (parked) {
@@ -1051,6 +1086,10 @@ export function createIdeaWidget(options) {
     // Cancels any capture restore still pending, so a timer cannot fire against
     // a box that has since been reopened and put it back to transparent.
     duck(false);
+    // A preview does not outlive the box it was shown in: the next open is
+    // the dock as it was before the page asked for the panel, with no scrim
+    // left over a page nobody is looking at a preview on.
+    widen(false);
     document.removeEventListener("keydown", onKey, true);
     // KEPT FOR THE NEXT OPEN, out of sight and holding no connection — so
     // reopening is instant and the conversation is where it was left. Thrown
@@ -1168,6 +1207,11 @@ export function createIdeaWidget(options) {
     // It is invisible; it must not still be catching clicks meant for the page
     // underneath it.
     overlay.style.pointerEvents = on ? "none" : "";
+    // A preview's scrim goes with it, or the picture is of a dimmed page.
+    if (scrim) {
+      scrim.style.opacity = overlay.style.opacity;
+      scrim.style.pointerEvents = overlay.style.pointerEvents;
+    }
     if (on) {
       // NEVER STUCK INVISIBLE. If the framed page dies between the two
       // messages — a crash, a reload, a browser that killed the capture — the
@@ -1216,14 +1260,70 @@ export function createIdeaWidget(options) {
       if (!overlay) return;
       // Only a box somebody has moved: an undragged one is positioned by the
       // corner classes, and giving it a left/top here would tear it out of
-      // its corner the first time the console opened.
-      if (!overlay.style.left) return;
+      // its corner the first time the console opened. Nor under a preview's
+      // panel, which is what would be measured: `widen` clamps on its way out.
+      if (!overlay.style.left || overlay.classList.contains("panel")) return;
       placeAt(
         overlay,
         parseFloat(overlay.style.left),
         parseFloat(overlay.style.top)
       );
     });
+  }
+
+  /**
+   * The centred panel for a preview of the change, and back.
+   *
+   * ASKED FOR, LIKE THE CONSOLE'S ROOM, and for the same reason: only the page
+   * knows a preview is showing, and only this half can make the box bigger.
+   * `avokaido:wide` while it is up, `avokaido:narrow` when it goes.
+   *
+   * LAID OVER THE BOX, NOT IN PLACE OF IT. The panel is a class whose rules
+   * win over everything the box carries, and nothing the box carries is
+   * touched — so narrowing is taking the class off, and the box that comes
+   * back is the one that was there: the conversation's size or the console's,
+   * in its corner or wherever it had been dragged. Including an `expand` or a
+   * `collapse` the page sent while the preview was up, which lands underneath
+   * and is what is shown when it goes.
+   *
+   * ONLY WHILE SHOWN. A scrim over the page with a parked box above it is a
+   * dimmed page nobody can find the reason for, and nothing on it closes.
+   * Narrowing is never refused: it is how the state is put right.
+   *
+   * On a phone the box is the whole screen already, and the panel is too —
+   * see the stylesheet — so there it changes nothing anybody can see, and
+   * narrowing still takes the class away.
+   */
+  function widen(on) {
+    if (on) {
+      if (!overlay || !shown) return;
+      overlay.classList.add("panel");
+      if (!scrim) {
+        scrim = document.createElement("div");
+        scrim.className = "scrim";
+        // Asked for in the middle of a screenshot, it starts out ducked too.
+        scrim.style.opacity = overlay.style.opacity;
+        scrim.style.pointerEvents = overlay.style.pointerEvents;
+        root.appendChild(scrim);
+      }
+      return;
+    }
+    if (scrim) {
+      scrim.remove();
+      scrim = null;
+    }
+    if (!overlay || !overlay.classList.contains("panel")) return;
+    // BACK IN ONE FRAME, not eased from 1200 pixels down. The box jumps from
+    // the middle of the window to its corner either way, and the clamp below
+    // has to measure the box that came back — mid-transition it would
+    // measure most of the panel, and push a box at the right of the window
+    // left by the difference.
+    overlay.style.transition = "none";
+    overlay.classList.remove("panel");
+    void overlay.offsetWidth;
+    overlay.style.transition = "";
+    // The window may have changed while the panel was up.
+    reclamp();
   }
 
   /**
@@ -1645,11 +1745,14 @@ export function createIdeaWidget(options) {
    * permanent across reloads.
    *
    * Only a box somebody has moved: an undragged one is positioned by the corner
-   * classes and reflows on its own.
+   * classes and reflows on its own. And not under a preview's panel, which is
+   * what the clamp would measure: a box at the right of a wide window would be
+   * moved to fit 1200 pixels of panel, and come back from `narrow` somewhere
+   * nobody put it. `widen` clamps again on the way out.
    */
   function reclamp() {
     if (overlay) fitSize(overlay);
-    if (!overlay || !overlay.style.left) return;
+    if (!overlay || !overlay.style.left || overlay.classList.contains("panel")) return;
     placeAt(
       overlay,
       parseFloat(overlay.style.left),
@@ -1756,6 +1859,10 @@ export function createIdeaWidget(options) {
       resize(true);
     } else if (type === "avokaido:collapse") {
       resize(false);
+    } else if (type === "avokaido:wide") {
+      widen(true);
+    } else if (type === "avokaido:narrow") {
+      widen(false);
     } else if (type === "avokaido:cover") {
       if (overlay) overlay.classList.add("covered");
     } else if (type === "avokaido:uncover") {
