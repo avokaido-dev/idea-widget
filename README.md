@@ -667,11 +667,11 @@ one check, verified and dropped like the rest. Never a cookie
 (`credentials: "omit"`), never in a URL.
 
 **The look it matched — to the chat in the box only**, so the chat can draw
-in your colours: the colours, fonts, size and radius it worked out, and where
-each came from. "Where" can name your most prominent button's label and your
-first heading, cut to a couple of dozen characters (`button “Add session this
-week”`). It is posted to the chat's frame on our origin and is not put in a
-URL. With `data-theme="avo"` nothing is read off your page at all.
+in your colours: the colours, fonts, size and radius it worked out, and
+whether each was read, worked out or Avo's default. Never the words on your
+page — a button's label or a heading is read only to find a colour, and stays
+on your page. It is posted to the chat's frame on our origin and is not put in
+a URL. With `data-theme="avo"` nothing is read off your page at all.
 
 Everything else that reaches us is what the person typed and any screenshot they
 chose to share.

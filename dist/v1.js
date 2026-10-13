@@ -1421,15 +1421,25 @@ function createIdeaWidget(options) {
    * Hands the frame the theme it should draw with, `avokaido:theme`. The
    * page applies the variables itself; `full` rides along so it can draw the
    * right corners in the same frame as the right colours.
+   *
+   * WHERE EACH VALUE CAME FROM GOES AS A TAG ONLY — read, derived or Avo —
+   * never the words beside it. Those quote the host page (its main button's
+   * label, its first heading), which can be somebody's name, and the frame
+   * has no use for them: it draws with the values.
    */
   function tellTheme() {
     if (!themeNow) readTheme();
+    var tags = {};
+    Object.keys(themeNow.src || {}).forEach(function (role) {
+      var entry = themeNow.src[role];
+      if (entry && entry.tag) tags[role] = { tag: entry.tag };
+    });
     postToFrame({
       type: "avokaido:theme",
       vars: themeNow.vars,
       matched: themeNow.matched,
       from: themeNow.from,
-      src: themeNow.src,
+      src: tags,
       full: fullScreen(),
     });
   }
