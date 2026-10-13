@@ -25,6 +25,8 @@
  * every message is origin-checked.
  */
 
+import { launcherFont, matchTheme, themeOption } from "./theme.js";
+
 /** Corners the launcher and the dock may sit in. */
 export const CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"];
 
@@ -60,8 +62,14 @@ export const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  * @param {"floating"|"icon"|"none"} [options.launcher]
  *        `"floating"` is the labelled pill, `"icon"` a round lightbulb in the
  *        same corner, `"none"` no button at all — open it from your own menu
- *        with `open()`, and listen for `avokaido:visibility` to know whether
- *        to show that menu item.
+ *        with `open(menuItem)`, and the box opens under that item; listen for
+ *        `avokaido:visibility` to know whether to show it.
+ * @param {"avo"|Object} [options.theme]
+ *        The app's own theme, which wins over what the widget reads off the
+ *        page: `{ primary, text, background, fontHead, fontBody, size,
+ *        radius }`, each a plain value or `{ v, src }`. `"avo"` switches
+ *        matching off and always uses Avo's look. Left out, the widget reads
+ *        the page — see `src/theme.js`.
  * @param {"bottom-right"|"bottom-left"|"top-right"|"top-left"} [options.position]
  * @param {string|Object|Function} [options.context]
  *        Where in YOUR app the person is, so the interview does not have to
@@ -365,6 +373,24 @@ export function createIdeaWidget(options) {
   if (PRELOADS.indexOf(preload) < 0) preload = "intent";
 
   /**
+   * THE LOOK: THE SITE'S, OR AVO'S. The launcher, the dock and the chat
+   * inside it take the host page's primary colour, text, background, fonts,
+   * size and corners when they can be read — see `src/theme.js` — and Avo's
+   * when they cannot.
+   *
+   * THE APP'S OWN THEME WINS when it is given (`theme`, `data-theme`): it is
+   * what the app was written to look like, where one screen of the page is
+   * only what it happens to show. `"avo"` switches the reading off.
+   *
+   * READ AT MOUNT AND AGAIN ON EVERY OPEN, never once and kept. The launcher
+   * needs colours when it is drawn, which on a single-page app can be before
+   * its buttons or its web fonts exist; by the time somebody opens the box
+   * they do. `themeNow` is the last read, `{ vars, matched, from, src }`.
+   */
+  var themeChoice = themeOption(opts.theme);
+  var themeNow = null;
+
+  /**
    * The two origins the chat loads from, connected to before it is asked
    * for: ours, and the one Flutter's renderer comes from. A hint to the
    * browser, nothing more — no request is made, and nothing is sent.
@@ -526,7 +552,14 @@ export function createIdeaWidget(options) {
       );
     }
     var launcherEl = root && root.querySelector(".launcher");
-    if (launcherEl) launcherEl.hidden = !allowed();
+    if (launcherEl) {
+      // ABOUT TO BE SEEN FOR THE FIRST TIME: the page is read again, since
+      // the audience check took a round trip and a single-page app has
+      // usually drawn its buttons by now. Hidden until this line, so the
+      // colours change where nobody can see them.
+      if (launcherEl.hidden && allowed()) readTheme();
+      launcherEl.hidden = !allowed();
+    }
     if (allowed()) armPreload();
     if (!decided) return;
     var queued = waiting;
@@ -674,6 +707,102 @@ export function createIdeaWidget(options) {
     document.body.appendChild(host);
   }
 
+  /**
+   * Reads the page's look again and puts it on the widget — see `themeNow`.
+   *
+   * ON THE HOST ELEMENT, AS CUSTOM PROPERTIES, one `setProperty` each. They
+   * inherit into the shadow root (`all: initial` resets every property but
+   * custom ones), the stylesheet reads them with Avo's values as fallbacks,
+   * and a value read off somebody's page is never pasted into a stylesheet
+   * where a stray brace could end the rule it is in.
+   *
+   * `matchTheme` never throws and answers Avo default when the page cannot
+   * be read; the try here is for the writing, which is the same promise.
+   */
+  function readTheme() {
+    themeNow = matchTheme(document.body, themeChoice);
+    try {
+      if (host) {
+        var vars = themeNow.vars;
+        for (var name in vars) {
+          if (Object.prototype.hasOwnProperty.call(vars, name)) {
+            host.style.setProperty(name, String(vars[name]));
+          }
+        }
+        host.style.setProperty("--w-font-launcher", launcherFont(vars["--w-font-body"]));
+      }
+    } catch (e) {
+      /* The stylesheet's fallbacks are Avo default: unthemed, never broken. */
+    }
+    return themeNow;
+  }
+
+  /**
+   * Whether the box is the whole screen: a phone, a phone on its side, a
+   * browser zoomed to 200%.
+   *
+   * THE SAME QUERY AS THE STYLESHEET'S, character for character. The chat
+   * hides its resize arc and corner there, and the page-drawn header must not
+   * move a box that cannot be moved; if this and the stylesheet disagreed,
+   * the box would be full screen with a handle on it, or the reverse.
+   */
+  var FULL_SCREEN = "(max-width: 560px), (max-height: 440px)";
+  var fullQuery = null;
+
+  function fullScreen() {
+    try {
+      if (!fullQuery && window.matchMedia) fullQuery = window.matchMedia(FULL_SCREEN);
+      return Boolean(fullQuery && fullQuery.matches);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Hands the frame the theme it should draw with, `avokaido:theme`. The
+   * page applies the variables itself; `full` rides along so it can draw the
+   * right corners in the same frame as the right colours.
+   */
+  function tellTheme() {
+    if (!themeNow) readTheme();
+    postToFrame({
+      type: "avokaido:theme",
+      vars: themeNow.vars,
+      matched: themeNow.matched,
+      from: themeNow.from,
+      src: themeNow.src,
+      full: fullScreen(),
+    });
+  }
+
+  /** Tells the frame whether the box is the whole screen, `avokaido:layout`. */
+  function tellLayout() {
+    postToFrame({ type: "avokaido:layout", full: fullScreen() });
+  }
+
+  /**
+   * TOLD WHEN IT CHANGES, not only on open: a phone turned on its side, a
+   * window dragged narrow, a browser zoomed in — each crosses the line with
+   * the box open, and the chat's corners must follow in the same frame.
+   * `addListener` for the Safari that predates `addEventListener` here.
+   */
+  function onFullChange() {
+    tellLayout();
+  }
+  fullScreen();
+  if (fullQuery) {
+    try {
+      if (fullQuery.addEventListener) fullQuery.addEventListener("change", onFullChange);
+      else fullQuery.addListener(onFullChange);
+      teardown.push(function () {
+        if (fullQuery.removeEventListener) fullQuery.removeEventListener("change", onFullChange);
+        else fullQuery.removeListener(onFullChange);
+      });
+    } catch (e) {
+      /* No listener: the frame still hears it on every open. */
+    }
+  }
+
   function styles() {
     var el = document.createElement("style");
     el.textContent = [
@@ -686,23 +815,27 @@ export function createIdeaWidget(options) {
       ".launcher {",
       "  position: fixed; z-index: 1;",
       "  display: inline-flex; align-items: center; gap: 8px;",
-      "  padding: 10px 16px; border: 0; border-radius: 999px;",
+      "  padding: 10px 16px; border: 0; border-radius: 999px; overflow: visible;",
       "  font: 500 14px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;",
-      /* AVOKAIDO GREEN, AND THE SAME ONE THE INTERVIEW USES.
-         The launcher and the page it opens are one surface to the person
-         pressing it, and until now they were two different greens: the
-         button was #1f7a4d and the interview inside the frame is #2f6b3b.
-         Nobody sees them side by side — the button is behind the box it
-         opens — but they are seen four hundred milliseconds apart, which is
-         close enough. */
-      "  color: #fff; background: #2f6b3b; cursor: pointer;",
+      /* THE SITE'S BODY FONT, THEN THE SYSTEM'S — never the browser's
+         default serif, which is what `all: initial` leaves behind. Worked
+         out by `launcherFont` and set with the theme. */
+      "  font-family: var(--w-font-launcher, system-ui, -apple-system, 'Segoe UI', sans-serif);",
+      /* THE SITE'S PRIMARY, AND THE SAME ONE THE CHAT USES.
+         The launcher and the box it opens are one surface to the person
+         pressing it, and both now take their colours from one theme (see
+         `readTheme`): the site's primary when it can be read, Avo's
+         #2C4112 when it cannot — the fallbacks here are Avo's, so a widget
+         whose theme never arrived is Avo's and not a broken one. */
+      "  color: var(--w-on-primary, #F5F3EC); background: var(--w-primary, #2C4112);",
+      "  cursor: pointer;",
       "  box-shadow: 0 2px 6px rgba(0,0,0,.18), 0 8px 24px rgba(0,0,0,.14);",
       /* DRAGGABLE, so a finger on it moves it rather than scrolling the page,
          and holding it neither selects text nor opens the phone's callout. */
       "  touch-action: none; user-select: none; -webkit-user-select: none;",
       "  -webkit-touch-callout: none;",
       "}",
-      ".launcher:hover { background: #24552e }",
+      ".launcher:hover { background: var(--w-primary-hover, #445A2C) }",
       /* Picked up: over the dock rather than under it, and visibly lifted. */
       ".launcher.dragging { z-index: 3; cursor: grabbing; transform: scale(1.08);",
       "  box-shadow: 0 4px 10px rgba(0,0,0,.22), 0 14px 36px rgba(0,0,0,.2) }",
@@ -711,7 +844,43 @@ export function createIdeaWidget(options) {
       ".launcher.icon { width: 48px; height: 48px; padding: 0;",
       "  justify-content: center }",
       ".launcher.icon svg { width: 22px; height: 22px; display: block }",
-      ".launcher:focus-visible { outline: 2px solid #2f6b3b; outline-offset: 3px }",
+      ".launcher:focus-visible { outline: 2px solid var(--w-primary, #2C4112);",
+      "  outline-offset: 3px }",
+      /* A REQUEST IS WAITING IN THE CLOSED BOX: a small accent dot on the
+         launcher's shoulder, ringed in the background colour so it reads on
+         any primary. × keeps a conversation, so a request somebody had
+         half-written or not yet sent is still in there — and without a mark
+         on the button, nothing on the page says so. The chat says when
+         (`avokaido:pending`); the dot only shows while the box is closed. */
+      ".launcher .dot { display: none; position: absolute; top: -1px; right: -1px;",
+      "  width: 10px; height: 10px; border-radius: 50%; pointer-events: none;",
+      "  background: var(--w-accent, #C5DC6B); box-shadow: 0 0 0 2px var(--w-bg, #F5F3EC) }",
+      /* On the round lamp, where its rim crosses the diagonal. */
+      ".launcher.icon .dot { top: 2px; right: 2px }",
+      ".launcher.pending .dot { display: block }",
+      /* POINTING AT IT SAYS WHAT IT IS: the round lamp's name, or what is
+         waiting in it. Dark — the theme's text on its background — and on
+         the side of the launcher that faces the middle of the page, so it
+         never runs off the window. Our own bubble rather than a `title`,
+         which would be a second tooltip on top of it a second later. */
+      ".launcher .tip { display: none; position: absolute; top: 50%;",
+      "  transform: translateY(-50%); padding: 6px 10px; border-radius: 8px;",
+      "  white-space: nowrap; pointer-events: none;",
+      "  font: 600 13px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif;",
+      "  font-family: var(--w-font-launcher, system-ui, -apple-system, 'Segoe UI', sans-serif);",
+      "  color: var(--w-bg, #F5F3EC); background: var(--w-text, #231502) }",
+      ".launcher.bottom-right .tip, .launcher.top-right .tip { right: calc(100% + 12px) }",
+      ".launcher.bottom-left .tip, .launcher.top-left .tip { left: calc(100% + 12px) }",
+      /* Hover only where there is a pointer that hovers: a tap would
+         otherwise leave the bubble stuck up on a phone. Focus everywhere. */
+      "@media (hover: hover) {",
+      "  .launcher.icon:hover .tip, .launcher.pending:hover .tip { display: block }",
+      "}",
+      ".launcher.icon:focus-visible .tip, .launcher.pending:focus-visible .tip { display: block }",
+      /* Never while the box is open — it is in front of what was waiting —
+         and never while the launcher is held or gliding. */
+      ".launcher[aria-expanded='true'] .dot, .launcher[aria-expanded='true'] .tip,",
+      ".launcher.dragging .tip, .launcher.settling .tip { display: none !important }",
       /* 24 PIXELS OF BREATHING ROOM, and [CORNER_GAP] in the script is the
          same number: a dropped launcher glides to where these rules put it,
          and any difference between the two is a jump at the end of the glide. */
@@ -725,13 +894,20 @@ export function createIdeaWidget(options) {
          the one thing this is supposed to be better at than a link. A
          messenger-shaped box in a corner leaves the page readable, scrollable
          and clickable while the conversation is open. */
+      /* THE CARD TAKES THE THEME: the site's background, a 1px border in its
+         border colour, its radius + 8 (kept between 8 and 24), and a soft
+         shadow tinted with its text colour — Avo's, in the fallbacks, when
+         the site cannot be read. Border-box, so the border is inside the
+         384 by 588, and the sizes the resize handles measure are the sizes
+         they set. */
       ".dock {",
       "  position: fixed; z-index: 2;",
       "  display: flex; flex-direction: column;",
-      "  width: 384px; height: 588px;",
+      "  box-sizing: border-box; width: 384px; height: 588px;",
       "  max-width: calc(100vw - 32px); max-height: calc(100vh - 32px);",
-      "  background: #fff; border-radius: 16px; overflow: hidden;",
-      "  box-shadow: 0 6px 18px rgba(0,0,0,.12), 0 20px 48px rgba(0,0,0,.22);",
+      "  background: var(--w-bg, #F5F3EC); border: var(--p-border, 1px solid #DAD6CE);",
+      "  border-radius: var(--p-radius, 20px); overflow: hidden;",
+      "  box-shadow: var(--p-shadow, 0 24px 56px -16px rgba(35,21,2,.30), 0 2px 8px rgba(35,21,2,.08));",
       "}",
       /* Sits above its own launcher rather than beside it, so opening the
          dialog never moves the button that opened it. */
@@ -824,7 +1000,7 @@ export function createIdeaWidget(options) {
       "  border-top: 2px solid rgba(35,21,2,.4); border-top-left-radius: 4px;",
       "  opacity: 0 }",
       ".dock:hover .sizer.nw::after, .sizer.nw:focus-visible::after { opacity: 1 }",
-      ".sizer.nw:focus-visible { outline: 2px solid #2c4112; outline-offset: -2px;",
+      ".sizer.nw:focus-visible { outline: 2px solid var(--w-primary, #2C4112); outline-offset: -2px;",
       "  border-radius: 6px }",
       ".dock.sizing { user-select: none; transition: none !important }",
       ".dock.sizing iframe { pointer-events: none }",
@@ -849,6 +1025,19 @@ export function createIdeaWidget(options) {
          black is 40% brightness, and neither takes a click until it is gone. */
       ".dock.covered .close { filter: brightness(.4); pointer-events: none }",
       ".dock.covered .grip { pointer-events: none }",
+      /* THE PAGE DRAWS ITS OWN HEADER, and says so (`avokaido:chrome`): its
+         tabs, More and × in the top 52 pixels, and its own resize arc in the
+         corner. Then ours go — an invisible grip over its tabs would eat
+         their clicks, a second × would sit on its ×, and a square bracket
+         would sit on its arc. Moving is by its header instead
+         (`avokaido:grip`); the edges and corners still resize, all but the
+         top right, where its × is. A page that never says so keeps ours. */
+      ".dock.own-chrome .grip, .dock.own-chrome .close,",
+      ".dock.own-chrome .sizer.nw::after { display: none }",
+      /* MOVED BY THE PAGE'S HEADER. The frame keeps its pointer events — the
+         drag is coming from inside it, measured there, and taking them away
+         would end it on the first move. Nothing eases behind the pointer. */
+      ".dock.moving { transition: none !important }",
       /* On a phone there is no page left to keep visible, so it takes the
          screen — a 384px card floating over a 390px viewport is a lightbox
          with wasted margins. THE SAME ON A SHORT VIEWPORT, which is what a
@@ -859,12 +1048,15 @@ export function createIdeaWidget(options) {
          one person who moved the box never got the full screen. Nothing to
          drag or resize there, so the grip and the handles go.
          The preview's panel too: the screen is already all box, so there is
-         nothing to centre it in and nothing left for a scrim to dim. */
+         nothing to centre it in and nothing left for a scrim to dim.
+         No card edges either — no radius, border or shadow at the edge of a
+         screen. FULL_SCREEN in the script is this same query, and tells the
+         chat (`avokaido:layout`). */
       "@media (max-width: 560px), (max-height: 440px) {",
       "  .dock, .dock.placed, .dock.wide, .dock.panel { inset: 0 !important;",
       "          width: auto !important; height: auto !important;",
       "          max-width: none !important; max-height: none !important;",
-      "          border-radius: 0 }",
+      "          border-radius: 0; border: 0; box-shadow: none }",
       "  .grip, .sizer { display: none }",
       "  .scrim { display: none }",
       "}",
@@ -886,11 +1078,26 @@ export function createIdeaWidget(options) {
     return el;
   }
 
-  function open() {
+  /**
+   * Opens the box — under [anchor] when there is one.
+   *
+   * The anchor is the element it was opened from (a menu item), an event
+   * from pressing it, or a rectangle in window pixels for an app that draws
+   * into a canvas and has no element to give. Worked out NOW, at the call,
+   * not when the box finally opens: the press it follows is now, and the
+   * link may still be deciding who sees it.
+   */
+  function open(anchor) {
+    openAt(anchorOf(anchor));
+  }
+
+  function openAt(at) {
     // Waits for the answer rather than racing it, so an app that calls
     // `openIdeas()` from its own button at boot still gets the box.
     if (!decided) {
-      waiting.push(open);
+      waiting.push(function () {
+        openAt(at);
+      });
       return;
     }
     if (!allowed()) {
@@ -903,7 +1110,175 @@ export function createIdeaWidget(options) {
     // A frame built ahead is adopted as it is — already loaded, already
     // drawn — and that is the whole point of building it ahead.
     if (!overlay) buildFrame(false);
-    show();
+    show(at);
+  }
+
+  /**
+   * TOP-MENU MODE: THE BOX OPENS UNDER THE ITEM THAT OPENED IT.
+   *
+   * An app with its own "Suggest a change" item in its top menu
+   * (`launcher: "none"`) used to get the box in the bottom-right corner, a
+   * screen's width from what was pressed — it read as something else opening.
+   * Now it opens right under the item, the way any menu does.
+   *
+   * WITHOUT BEING TOLD WHICH ITEM. `openIdeas()` was documented with no
+   * argument, and every app that followed the README calls it that way, so in
+   * this mode the widget notes what the person last pressed — a pointer
+   * down, or Enter or Space — and an open within [PRESS_WITHIN_MS] of that
+   * press opens under it. Noting is all it does: capture-phase, passive,
+   * nothing stopped, nothing read but where the element is.
+   *
+   * A PRESS ON A CANVAS IS NOT A MENU ITEM. A Flutter app's whole screen is one
+   * element, so "what was pressed" is the window — see `anchorBox`, which
+   * drops anything that big and leaves the box where it would have been.
+   */
+  var PRESS_WITHIN_MS = 1500;
+  var ANCHOR_GAP = 8;
+  var lastPress = null; // { el, rect, at } — top-menu mode only
+  var anchoredBox = false; // the box on screen was placed under an anchor
+
+  function elementOf(x) {
+    return x && x.nodeType === 1 ? x : null;
+  }
+
+  /** The item itself, not the icon or the label inside it that was hit. */
+  function pressable(el) {
+    if (!el || typeof el.closest !== "function") return el;
+    return (
+      el.closest(
+        'a, button, summary, [role="button"], [role="menuitem"], [role="tab"], [role="link"]',
+      ) || el
+    );
+  }
+
+  function rectOf(el) {
+    var r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  }
+
+  function notePress(event) {
+    if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+    try {
+      var el = pressable(elementOf(event.target));
+      // Ours: a press inside the box is not a press on the app's menu.
+      if (!el || (host && (el === host || host.contains(el)))) return;
+      lastPress = { el: el, rect: rectOf(el), at: Date.now() };
+    } catch (e) {
+      /* Noting a press is never a reason for the app's own press to fail. */
+    }
+  }
+
+  if (launcher === "none") {
+    document.addEventListener("pointerdown", notePress, { capture: true, passive: true });
+    document.addEventListener("keydown", notePress, { capture: true, passive: true });
+    teardown.push(function () {
+      document.removeEventListener("pointerdown", notePress, { capture: true });
+      document.removeEventListener("keydown", notePress, { capture: true });
+    });
+  }
+
+  /**
+   * What `open` was given, as `{ el, rect }`, or null for no anchor: an
+   * element as it is; an event's item (`currentTarget`, else `target`); a
+   * rectangle; and, in top-menu mode with nothing given, the last press.
+   */
+  function anchorOf(arg) {
+    try {
+      if (arg && typeof arg === "object") {
+        if (elementOf(arg)) return { el: arg, rect: null };
+        if ("currentTarget" in arg || "target" in arg) {
+          var hit = pressable(elementOf(arg.currentTarget) || elementOf(arg.target));
+          if (hit) return { el: hit, rect: rectOf(hit) };
+        } else if (isFinite(arg.left) && isFinite(arg.top)) {
+          var right = isFinite(arg.right) ? arg.right : arg.left + Number(arg.width);
+          var bottom = isFinite(arg.bottom) ? arg.bottom : arg.top + Number(arg.height);
+          if (isFinite(right) && isFinite(bottom)) {
+            return {
+              el: null,
+              rect: { left: +arg.left, top: +arg.top, right: +right, bottom: +bottom },
+            };
+          }
+        }
+      }
+      if (launcher === "none" && lastPress && Date.now() - lastPress.at <= PRESS_WITHIN_MS) {
+        return { el: lastPress.el, rect: lastPress.rect };
+      }
+    } catch (e) {
+      /* An anchor that cannot be read opens the box where it always opened. */
+    }
+    return null;
+  }
+
+  /**
+   * Where the anchor is now, or null when it is no use as one.
+   *
+   * Measured again at the open, because a menu may have scrolled or
+   * reflowed since the press; the rectangle noted at the press stands in
+   * for an item the menu has already taken away (a dropdown closing on the
+   * same click). Nothing a quarter of the window or more — that is a page or
+   * a canvas, not an item.
+   */
+  function anchorBox(at) {
+    var r = null;
+    var el = at.el;
+    if (el && el.isConnected && el !== document.body && el !== document.documentElement) {
+      var live = el.getBoundingClientRect();
+      if (live.width > 0 && live.height > 0) r = rectOf(el);
+    }
+    if (!r && at.rect) r = at.rect;
+    if (!r) return null;
+    var w = r.right - r.left;
+    var h = r.bottom - r.top;
+    if (!(w > 0 && h > 0)) return null;
+    if (w * h >= 0.25 * window.innerWidth * window.innerHeight) return null;
+    return r;
+  }
+
+  /**
+   * Under the anchor, 8 pixels below it; left-aligned with it, or
+   * right-aligned when that keeps more of the box on screen (an item at the
+   * right of a top menu). Above it when there is no room below. Clamped
+   * like every other placement, and measured as a placed box — its height
+   * cap is the window's, not a corner's.
+   *
+   * NOT REMEMBERED. The position a person chose by dragging is theirs; one
+   * worked out from a menu item would overwrite it, and a box opened from
+   * the menu opens under the menu every time anyway.
+   */
+  function placeUnder(el, a) {
+    el.classList.add("placed");
+    var w = el.offsetWidth || 384;
+    var h = el.offsetHeight || 588;
+    var offBy = function (left) {
+      return Math.max(0, MARGIN - left) + Math.max(0, left + w - (window.innerWidth - MARGIN));
+    };
+    var left = a.left;
+    if (offBy(a.right - w) < offBy(left)) left = a.right - w;
+    var below = window.innerHeight - MARGIN - (a.bottom + ANCHOR_GAP);
+    var above = a.top - ANCHOR_GAP - MARGIN;
+    var top = h <= below || below >= above ? a.bottom + ANCHOR_GAP : a.top - ANCHOR_GAP - h;
+    placeAt(el, left, top);
+  }
+
+  /**
+   * Where the box goes for this open: under its anchor, or — for an open
+   * with none after one with an anchor — back where the person last put it,
+   * or its corner.
+   */
+  function placeForOpen(at) {
+    var box = at ? anchorBox(at) : null;
+    if (box) {
+      placeUnder(overlay, box);
+      anchoredBox = true;
+      return;
+    }
+    if (!anchoredBox) return;
+    anchoredBox = false;
+    overlay.style.left = overlay.style.top = "";
+    overlay.style.right = overlay.style.bottom = "";
+    overlay.classList.remove("placed");
+    var saved = rememberedPlace();
+    if (saved) placeAt(overlay, saved.left, saved.top);
   }
 
   /**
@@ -926,6 +1301,11 @@ export function createIdeaWidget(options) {
       overlay.inert = true;
       overlay.setAttribute("aria-hidden", "true");
     }
+    // A new box: placed as the person left it, with our own grip and × until
+    // the page inside says it draws its own (`own-chrome` is a class on this
+    // element, so a fresh frame starts without it).
+    anchoredBox = false;
+    pageDrag = null;
     applyRememberedSize(overlay);
     placeRemembered(overlay);
 
@@ -1003,10 +1383,18 @@ export function createIdeaWidget(options) {
     }, READY_WITHIN_MS);
   }
 
-  /** On screen: unparked, focused, and told where the person is now. */
-  function show() {
+  /**
+   * On screen: themed as the page looks now, placed (under its anchor, if it
+   * was opened from one), unparked, focused, and told where the person is.
+   */
+  function show(at) {
     shown = true;
     lastFocus = document.activeElement;
+    // Read again on every open: web fonts and an app's buttons may have
+    // arrived since the launcher was drawn. Before the box is unparked, so
+    // it is never seen in the old colours.
+    readTheme();
+    placeForOpen(at);
     overlay.classList.remove("parked");
     // Replays the rise every time it is shown, not only when it is built.
     overlay.classList.remove("shown");
@@ -1048,6 +1436,10 @@ export function createIdeaWidget(options) {
     var message = whereNow();
     message.type = "avokaido:open";
     if (openMs !== null) message.openMs = Math.max(0, Math.round(openMs));
+    // The look and the shape before the open, so the page draws the open in
+    // the right colours and corners rather than repainting after it.
+    tellTheme();
+    tellLayout();
     postToFrame(message);
     if (user && typeof user.getIdToken === "function") {
       idTokenWithin(user.getIdToken, ID_TOKEN_WAIT_MS)
@@ -1109,7 +1501,8 @@ export function createIdeaWidget(options) {
    *  page lets go of its connection. */
   function park() {
     if (!overlay) return;
-    overlay.classList.remove("shown", "covered");
+    overlay.classList.remove("shown", "covered", "moving");
+    pageDrag = null;
     overlay.classList.add("parked");
     overlay.inert = true;
     overlay.setAttribute("aria-hidden", "true");
@@ -1127,6 +1520,10 @@ export function createIdeaWidget(options) {
     frame = null;
     frameReady = false;
     paintedAt = 0;
+    anchoredBox = false;
+    pageDrag = null;
+    // The conversation went with the frame, and whatever was waiting in it.
+    setPending(null);
   }
 
   /**
@@ -1363,18 +1760,29 @@ export function createIdeaWidget(options) {
     return at;
   }
 
-  function placeRemembered(el) {
-    // Read before the element is measurable, so the clamp runs again on the
-    // first frame — offsetWidth is 0 until it is in the document.
+  /** Where the person last put the box, or null. */
+  function rememberedPlace() {
     var saved = null;
     try {
       saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
     } catch (e) {
       /* A browser with storage blocked simply does not remember. */
     }
-    if (!saved || typeof saved.left !== "number") return;
+    if (!saved || typeof saved.left !== "number") return null;
+    return saved;
+  }
+
+  function placeRemembered(el) {
+    // Read before the element is measurable, so the clamp runs again on the
+    // first frame — offsetWidth is 0 until it is in the document.
+    var saved = rememberedPlace();
+    if (!saved) return;
     requestAnimationFrame(function () {
-      if (el.isConnected) placeAt(el, saved.left, saved.top);
+      // Not over a box opened under a menu item in the meantime: that open
+      // placed it, and this frame was queued before it.
+      if (el.isConnected && !(el === overlay && anchoredBox)) {
+        placeAt(el, saved.left, saved.top);
+      }
     });
   }
 
@@ -1411,6 +1819,57 @@ export function createIdeaWidget(options) {
     document.addEventListener("pointermove", move, true);
     document.addEventListener("pointerup", drop, true);
     document.addEventListener("pointercancel", drop, true);
+  }
+
+  /**
+   * Moving the box by the page's own header, `avokaido:grip`.
+   *
+   * THE HEADER IS THE PAGE'S NOW — its tabs, More and × — so our invisible
+   * grip over it had to go (see `own-chrome`), and with it the only way to
+   * hold the box. The page measures the drag instead and reports it:
+   * `start`, then `move`s and an `end`, each with `dx`, `dy` in screen pixels
+   * since the press. Screen pixels because the frame moves under the pointer
+   * as the box does — a position measured inside it would chase its own tail
+   * — and the screen does not move.
+   *
+   * THE SAME DRAG AS OURS from there: the box's place at the press plus the
+   * distance, clamped by `placeAt` on every move, remembered on the drop.
+   * Not under a preview's panel, which is not somewhere a box was put, and
+   * not on a full screen, where there is nowhere to move it. A number that
+   * is not a number moves nothing.
+   */
+  var pageDrag = null; // { left, top } of the box at the press
+
+  function pageGrip(data) {
+    var phase = data.phase;
+    var dx = data.dx;
+    var dy = data.dy;
+    var sane = typeof dx === "number" && typeof dy === "number" && isFinite(dx) && isFinite(dy);
+    var stuck = !overlay || !shown || overlay.classList.contains("panel") || fullScreen();
+    if (phase === "start") {
+      pageDrag = null;
+      if (stuck) return;
+      var box = overlay.getBoundingClientRect();
+      pageDrag = { left: box.left, top: box.top };
+      overlay.classList.add("moving");
+      return;
+    }
+    if (!pageDrag) return;
+    if (phase === "move") {
+      if (sane && !stuck) placeAt(overlay, pageDrag.left + dx, pageDrag.top + dy);
+      return;
+    }
+    if (phase !== "end") return;
+    var began = pageDrag;
+    pageDrag = null;
+    if (overlay) overlay.classList.remove("moving");
+    if (!sane || stuck) return;
+    var at = placeAt(overlay, began.left + dx, began.top + dy);
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(at));
+    } catch (err) {
+      /* Not remembering is a smaller problem than throwing while dropping. */
+    }
   }
 
   /**
@@ -1818,6 +2277,11 @@ export function createIdeaWidget(options) {
       if (shown) {
         tellOpen(null);
         focusFrame();
+      } else {
+        // Built ahead: themed and shaped now, out of sight, so the open it
+        // is kept for shows it already in the site's colours.
+        tellTheme();
+        tellLayout();
       }
       emit("ready", {});
     } else if (type === "avokaido:painted") {
@@ -1867,7 +2331,65 @@ export function createIdeaWidget(options) {
       if (overlay) overlay.classList.add("covered");
     } else if (type === "avokaido:uncover") {
       if (overlay) overlay.classList.remove("covered");
+    } else if (type === "avokaido:chrome") {
+      // THE PAGE DRAWS ITS OWN HEADER AND ×: ours go (see the stylesheet).
+      // Sent by the page right after it is ready; an older page never sends
+      // it and keeps our grip and ×. `own: false` hands them back.
+      if (overlay) overlay.classList.toggle("own-chrome", event.data.own === true);
+    } else if (type === "avokaido:x") {
+      // Its own ×, pressed: exactly what ours did — put away and kept.
+      close("button");
+    } else if (type === "avokaido:grip") {
+      pageGrip(event.data);
+    } else if (type === "avokaido:pending") {
+      setPending(event.data.state);
     }
+  }
+
+  /**
+   * A request waiting in the closed box — `avokaido:pending` from the chat,
+   * `{ state: "ready" | "waiting" | null }`.
+   *
+   * × KEEPS THE CONVERSATION, so a request that was ready to send, or still
+   * being asked about, is in there after the box is closed — and nothing on
+   * the page said so. The chat knows; it tells this half, and the launcher
+   * gets a dot and says which when pointed at. Reopening lands on it, which
+   * is the chat's half.
+   *
+   * TOLD TO THE HOST PAGE TOO, as `avokaido:pending` on the document, for an
+   * app with its own menu item — there is no launcher of ours to put a dot on.
+   * Anything but the two states is no request: a dot that cannot be cleared
+   * is worse than one that does not show.
+   */
+  var PENDING_SAYS = {
+    ready: "Your request is ready to send",
+    waiting: "Your request is waiting",
+  };
+  var pending = null;
+
+  function setPending(state) {
+    var next = state === "ready" || state === "waiting" ? state : null;
+    if (next === pending) return;
+    pending = next;
+    drawPending();
+    emit("pending", { state: pending });
+  }
+
+  /**
+   * The dot, the bubble's words and the accessible name, for the state now.
+   * The round lamp's bubble names it when nothing is waiting; the pill has its
+   * name written on it, and only speaks up when something is.
+   */
+  function drawPending() {
+    var el = root && root.querySelector(".launcher");
+    if (!el) return;
+    var says = pending ? PENDING_SAYS[pending] : "";
+    el.classList.toggle("pending", Boolean(pending));
+    var tip = el.querySelector(".tip");
+    if (tip) tip.textContent = says || (launcher === "icon" ? label : "");
+    var name = says ? label + ". " + says : launcher === "icon" ? label : "";
+    if (name) el.setAttribute("aria-label", name);
+    else el.removeAttribute("aria-label");
   }
   window.addEventListener("message", onMessage);
   teardown.push(function () {
@@ -1888,13 +2410,17 @@ export function createIdeaWidget(options) {
       // here rather than at create, because only a launcher can be moved.
       corner = rememberedCorner() || corner;
       mount();
+      // Its colours are the page's, so the page is read before it is drawn.
+      readTheme();
       var button = document.createElement("button");
       button.type = "button";
       button.className = "launcher " + corner + (launcher === "icon" ? " icon" : "");
       button.hidden = !allowed();
       if (launcher === "icon") {
+        // The name is spoken from here and shown in our own bubble when it
+        // is pointed at (`.tip`) — not a `title`, which would put the
+        // browser's tooltip on top of ours a second later.
         button.setAttribute("aria-label", label);
-        button.title = label;
         // A lightbulb, drawn inline: no icon font or image request on
         // somebody else's page.
         button.innerHTML =
@@ -1906,6 +2432,17 @@ export function createIdeaWidget(options) {
       } else {
         button.textContent = label;
       }
+      // The dot for a request waiting, and the bubble that says what it is —
+      // both hidden from a screen reader, which hears the name instead (see
+      // `drawPending`).
+      var dot = document.createElement("span");
+      dot.className = "dot";
+      dot.setAttribute("aria-hidden", "true");
+      var tip = document.createElement("span");
+      tip.className = "tip";
+      tip.setAttribute("aria-hidden", "true");
+      button.appendChild(dot);
+      button.appendChild(tip);
       button.addEventListener("pointerdown", startLauncherDrag);
       // INTENT: pointing at it, tabbing to it or touching it is the moment to
       // build the chat — the press is a few hundred milliseconds behind.
@@ -1923,6 +2460,7 @@ export function createIdeaWidget(options) {
         else open();
       });
       root.appendChild(button);
+      drawPending();
     };
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", start);
@@ -1932,6 +2470,22 @@ export function createIdeaWidget(options) {
     } else {
       start();
     }
+  }
+
+  /**
+   * ONCE MORE WHEN THE PAGE HAS LOADED, for the launcher's sake. It is drawn
+   * at DOMContentLoaded, before an app's web fonts — and often its buttons —
+   * exist; it should not wear Avo's green until somebody first opens the box.
+   * Only once a widget is drawn, and only once.
+   */
+  if (document.readyState !== "complete") {
+    var onLoad = function () {
+      if (host) readTheme();
+    };
+    window.addEventListener("load", onLoad);
+    teardown.push(function () {
+      window.removeEventListener("load", onLoad);
+    });
   }
 
   /**
@@ -1957,8 +2511,13 @@ export function createIdeaWidget(options) {
   }
 
   return {
-    open: function () {
-      open();
+    /**
+     * Opens the box. Given the menu item it was opened from — the element,
+     * the click's event, or a rectangle in window pixels — it opens right
+     * under it; see `anchorOf`.
+     */
+    open: function (anchor) {
+      open(anchor);
     },
     close: function (reason) {
       close(reason || "api");

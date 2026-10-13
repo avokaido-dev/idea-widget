@@ -1,10 +1,10 @@
 /**
- * Avokaido idea widget 1.11.0 — one script tag on your page.
+ * Avokaido idea widget 1.12.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
  *
- * GENERATED FILE — edit src/widget.js or src/script-tag.js and run
+ * GENERATED FILE — edit src/theme.js, src/widget.js or src/script-tag.js and run
  * `npm run build`. Source, licence and docs: https://github.com/avokaido-dev/idea-widget
  *
  * VERSIONED IN THE PATH. You paste this once and never touch it again, so
@@ -13,6 +13,650 @@
  */
 (function () {
   "use strict";
+
+/**
+ * Looking like the site it sits on — the theme matcher.
+ *
+ * The box sits on somebody else's page, and a dark-green card with a
+ * lightbulb on a blue booking app reads as an advert for somebody else. So
+ * the widget reads the page's look — its primary colour, text colour,
+ * background, fonts, text size and corner radius — puts them into the roles
+ * avo-design-tokens uses, and works out the rest from those with contrast
+ * checks. The launcher and the dock take the result as CSS variables, and the
+ * chat inside the frame is handed the same set (`avokaido:theme`).
+ *
+ * A PORT, NOT A REWRITE. The maths is the design handoff's reference matcher
+ * (`tokens/theme-matcher.js`) line for line, because that file is what drew
+ * the approved pictures: every example theme in them is reproduced exactly by
+ * `derive`, and `test/theme.test.mjs` holds it to that. Change a number here
+ * and the widget stops matching its own design.
+ *
+ * AVO DEFAULT IS THE ANSWER WHENEVER THERE IS DOUBT. A site counts as matched
+ * only when a primary colour is found; otherwise every value is Avo's. Half a
+ * match — a found font with Avo's green — looks worse than not matching at
+ * all. And nothing here may break the widget: `matchTheme` catches everything
+ * and answers Avo default, because a page whose styles cannot be read is not a
+ * reason somebody cannot make a suggestion.
+ *
+ * READ-ONLY ON THE HOST PAGE. Computed styles and bounding boxes, nothing
+ * written, no listener added. What is read goes into the widget's own shadow
+ * root and into the frame; it is never put in a URL.
+ *
+ * Pure functions, no class, no DOM outside `readPage` and `pageFacts` — so all
+ * of the rest can be tested in a package that deliberately has no jsdom.
+ */
+
+/** Avo default: layer-2 roles from avokaido-dev/avo-design-tokens (main). */
+var AVO = {
+  primary: "#2C4112",
+  primaryHover: "#445A2C",
+  onPrimary: "#F5F3EC",
+  primarySubtle: "#E3FACE",
+  text: "#231502",
+  background: "#F5F3EC",
+  accent1: "#C5DC6B",
+  fontHead: "'Space Grotesk', sans-serif",
+  fontBody: "'Instrument Sans', Inter, sans-serif",
+};
+
+/** The seven values a theme is read as, from the page or the app's code. */
+var THEME_KEYS = [
+  "primary",
+  "text",
+  "background",
+  "fontHead",
+  "fontBody",
+  "size",
+  "radius",
+];
+
+/**
+ * Where a page states its brand colour outright, checked in this order before
+ * any button is looked at. A design system's own name first, then the common
+ * ones: Bootstrap's, Material's, and the bare names people reach for.
+ */
+var PRIMARY_VARS = [
+  "--avo-color-primary",
+  "--color-primary",
+  "--primary",
+  "--brand",
+  "--brand-primary",
+  "--bs-primary",
+  "--md-sys-color-primary",
+];
+
+/**
+ * THE MOST ELEMENTS ONE READ LOOKS AT, per kind. Not part of the reference,
+ * and not a change to its maths: a page of ten thousand divs is somebody
+ * else's, and reading the style of every one of them on every open is a pause
+ * we would be adding to their app. Document order puts the header and the
+ * main content first, which is where the buttons and panels worth reading are.
+ */
+var MAX_SCAN = 4000;
+
+/** "The app's theme" — the source named for a value given as a plain value. */
+var APP_THEME = "the app's theme";
+
+function parseColour(s) {
+  if (!s) return null;
+  s = String(s).trim();
+  var m = s.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (m) {
+    var h = m[1];
+    if (h.length === 3) {
+      h = h
+        .split("")
+        .map(function (c) { return c + c; })
+        .join("");
+    }
+    return {
+      r: parseInt(h.slice(0, 2), 16),
+      g: parseInt(h.slice(2, 4), 16),
+      b: parseInt(h.slice(4, 6), 16),
+      a: 1,
+    };
+  }
+  m = s.match(/^rgba?\(([^)]+)\)$/i);
+  if (m) {
+    var p = m[1].split(/[\s,\/]+/).filter(Boolean).map(parseFloat);
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  }
+  return null;
+}
+
+function colourOf(x) {
+  return typeof x === "string" ? parseColour(x) : x;
+}
+
+function hexOf(c) {
+  return (
+    "#" +
+    [c.r, c.g, c.b]
+      .map(function (v) {
+        return Math.max(0, Math.min(255, Math.round(v)))
+          .toString(16)
+          .padStart(2, "0");
+      })
+      .join("")
+      .toUpperCase()
+  );
+}
+
+function mixColour(a, b, t) {
+  a = colourOf(a);
+  b = colourOf(b);
+  return hexOf({
+    r: a.r + (b.r - a.r) * t,
+    g: a.g + (b.g - a.g) * t,
+    b: a.b + (b.b - a.b) * t,
+  });
+}
+
+function linear(v) {
+  v /= 255;
+  return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+}
+
+function luminance(c) {
+  c = colourOf(c);
+  return 0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b);
+}
+
+function contrastOf(a, b) {
+  var x = luminance(a);
+  var y = luminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/** OKLab chroma: how much colour there is, so a grey is never a brand. */
+function chromaOf(c) {
+  c = colourOf(c);
+  var r = linear(c.r);
+  var g = linear(c.g);
+  var b = linear(c.b);
+  var l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  var m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  var s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  var A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  var B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return Math.sqrt(A * A + B * B);
+}
+
+/**
+ * Whether a page can be read at all, from what `pageFacts` found on it.
+ *
+ * EXPORTED FOR ITS TESTS: the decision is the half that can be checked
+ * without a DOM, so it is out here, apart from the measuring.
+ *
+ * A CANVAS HAS NO COLOURS TO READ. A Flutter web app — and anything else that
+ * draws itself into a canvas — leaves the page with one element and nothing
+ * on it: no buttons, no panels, a body font nobody sees. Reading it would
+ * "find" the browser's defaults and match the box to those, which is worse
+ * than Avo default. So the page says so with `data-render="canvas"`, or it is
+ * a Flutter app (`flutter-view` or `flt-glass-pane` on it), or a canvas
+ * covers at least 60% of the window, and then only the app's code (the
+ * `theme` option) can theme it.
+ */
+function pageReadable(facts) {
+  if (!facts) return false;
+  if (String(facts.render || "").trim().toLowerCase() === "canvas") return false;
+  if (facts.flutter) return false;
+  if (Number(facts.canvasShare) >= 0.6) return false;
+  return true;
+}
+
+/**
+ * What `pageReadable` decides on, measured: the root's `data-render`, whether
+ * Flutter is on the page, and the largest share of the window one canvas
+ * covers (only the part inside the window counts).
+ */
+function pageFacts(root) {
+  var doc = root.ownerDocument || document;
+  var win = doc.defaultView || window;
+  var vw = win.innerWidth || doc.documentElement.clientWidth || 0;
+  var vh = win.innerHeight || doc.documentElement.clientHeight || 0;
+  var share = 0;
+  if (vw > 0 && vh > 0) {
+    var canvases = doc.querySelectorAll("canvas");
+    for (var i = 0; i < canvases.length && i < MAX_SCAN; i++) {
+      var r = canvases[i].getBoundingClientRect();
+      var w = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
+      var h = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+      share = Math.max(share, (w * h) / (vw * vh));
+    }
+  }
+  return {
+    render: root.getAttribute ? root.getAttribute("data-render") : null,
+    flutter: Boolean(doc.querySelector("flutter-view, flt-glass-pane")),
+    canvasShare: share,
+  };
+}
+
+/**
+ * What the page shows: the seven values, each `{ v, src }`, where `src` says
+ * where on the page it came from. `{ readable: false }` for a page drawn in a
+ * canvas (see `pageReadable`); null for no root.
+ *
+ * The reference's rules, in its order: a page variable for the primary if it
+ * is a real colour; then the most prominent coloured button — colour strength
+ * times the square root of its area, at least 60% opaque — for the primary
+ * (when no variable gave one) and the corner radius; the page's text colour;
+ * the largest neutral panel covering 15% of the page, else the page
+ * background; the body font, the first h1 or h2's font, and the text size.
+ */
+function readPage(root) {
+  if (!root) return null;
+  if (!pageReadable(pageFacts(root))) return { readable: false };
+  var doc = root.ownerDocument || document;
+  var win = doc.defaultView || window;
+  var styleOf = function (el) { return win.getComputedStyle(el); };
+  var cs = styleOf(root);
+  var out = { readable: true };
+  var i;
+  for (i = 0; i < PRIMARY_VARS.length; i++) {
+    var n = PRIMARY_VARS[i];
+    var pv = parseColour(cs.getPropertyValue(n));
+    if (pv && chromaOf(pv) >= 0.06) {
+      out.primary = { v: hexOf(pv), src: n + " (page variable)" };
+      break;
+    }
+  }
+  var best = null;
+  var buttons = root.querySelectorAll('button, a, [role="button"], input[type="submit"]');
+  for (i = 0; i < buttons.length && i < MAX_SCAN; i++) {
+    var el = buttons[i];
+    var st = styleOf(el);
+    var c = parseColour(st.backgroundColor);
+    if (!c || c.a < 0.6) continue;
+    var r = el.getBoundingClientRect();
+    var area = r.width * r.height;
+    if (!area) continue;
+    var ch = chromaOf(c);
+    if (ch < 0.06) continue;
+    var score = ch * Math.sqrt(area);
+    if (!best || score > best.score) best = { score: score, c: c, el: el, st: st };
+  }
+  if (best) {
+    var label = "button “" + (best.el.textContent || "").trim().slice(0, 26) + "”";
+    if (!out.primary) out.primary = { v: hexOf(best.c), src: label };
+    var rad = parseFloat(best.st.borderTopLeftRadius);
+    if (!isNaN(rad)) out.radius = { v: rad, src: label };
+  }
+  var tc = parseColour(cs.color);
+  if (tc) out.text = { v: hexOf(tc), src: "page text" };
+  var surf = null;
+  var rootArea = root.clientWidth * root.clientHeight;
+  var panels = root.querySelectorAll("header, main, section, div");
+  for (i = 0; i < panels.length && i < MAX_SCAN; i++) {
+    var pc = parseColour(styleOf(panels[i]).backgroundColor);
+    if (!pc || pc.a < 0.9 || chromaOf(pc) > 0.04) continue;
+    var pr = panels[i].getBoundingClientRect();
+    var parea = pr.width * pr.height;
+    if (parea < rootArea * 0.15) continue;
+    if (!surf || parea > surf.area) surf = { area: parea, c: pc };
+  }
+  var bg = parseColour(cs.backgroundColor);
+  if (surf) out.background = { v: hexOf(surf.c), src: "largest panel on the page" };
+  else if (bg && bg.a > 0.9) out.background = { v: hexOf(bg), src: "page background" };
+  out.fontBody = { v: cs.fontFamily, src: "page text" };
+  var head = root.querySelector("h1, h2");
+  if (head) {
+    out.fontHead = {
+      v: styleOf(head).fontFamily,
+      src: head.tagName.toLowerCase() + " “" + head.textContent.trim().slice(0, 20) + "”",
+    };
+  }
+  var fs = parseFloat(cs.fontSize);
+  if (fs) out.size = { v: fs, src: "page text" };
+  return out;
+}
+
+/**
+ * The page's values and the app's code's, as one set: each `{ v, src, from }`
+ * with `from` either `"repo"` or `"page"`.
+ *
+ * THE APP'S CODE WINS, value by value. A theme read from the repository is
+ * what the app was written to look like; the page is what one screen of it
+ * happens to show — a promo banner's button can outscore the real primary.
+ * A page that cannot be read gives nothing, so the code alone themes it.
+ */
+function merge(page, repo) {
+  var found = {};
+  THEME_KEYS.forEach(function (k) {
+    if (repo && repo[k]) found[k] = { v: repo[k].v, src: repo[k].src, from: "repo" };
+    else if (page && page.readable && page[k]) {
+      found[k] = { v: page[k].v, src: page[k].src, from: "page" };
+    }
+  });
+  return found;
+}
+
+/**
+ * Everything else, worked out from what was found — the reference's rules,
+ * exactly, which is what makes the pictures and the widget agree.
+ *
+ * The text keeps 4.5:1 on the background or becomes Avo's ink (or Avo's paper
+ * on a dark page); the primary is deepened toward the text in 10% steps until
+ * it holds 3:1; on-primary is white when white holds 4.5:1; the rest — hover,
+ * subtle, bubble, muted, borders, input, accent, radii, shadow — are mixes of
+ * those, each checked where it carries text. `src` says, per role, whether
+ * the value was read (`"page"` or `"repo"`), worked out (`"derived"`), or is
+ * Avo's (`"avo"`), and from where.
+ */
+function derive(found) {
+  found = found || {};
+  var A = AVO;
+  var matched = !!found.primary;
+  var R = {};
+  var src = {};
+  var set = function (k, v, tag, text) {
+    R[k] = v;
+    src[k] = { tag: tag, text: text };
+  };
+  var avo = "avo-design-tokens";
+  if (!matched) {
+    set("primary", A.primary, "avo", avo);
+    set("onPrimary", A.onPrimary, "avo", avo);
+    set("primaryHover", A.primaryHover, "avo", avo);
+    set("primarySubtle", A.primarySubtle, "avo", avo);
+    set("text", A.text, "avo", avo);
+    set("background", A.background, "avo", avo);
+    set("fontHead", A.fontHead, "avo", avo);
+    set("fontBody", A.fontBody, "avo", avo);
+    set("size", 16, "avo", "text.body-regular");
+    set("radius", 12, "avo", "widget default, no token yet");
+  } else {
+    var bg0 = found.background ? found.background.v : A.background;
+    if (found.background) set("background", bg0, found.background.from, found.background.src);
+    else set("background", bg0, "avo", avo);
+    var dark0 = luminance(bg0) < 0.3;
+    var text0;
+    if (found.text && contrastOf(found.text.v, bg0) >= 4.5) {
+      text0 = found.text.v;
+      set("text", text0, found.text.from, found.text.src);
+    } else {
+      text0 = dark0 ? "#F5F3EC" : A.text;
+      set("text", text0, "avo", found.text ? "page text was too faint" : avo);
+    }
+    var pr0 = found.primary.v;
+    var n = 0;
+    while (contrastOf(pr0, bg0) < 3 && n < 24) {
+      pr0 = mixColour(pr0, text0, 0.1);
+      n++;
+    }
+    set(
+      "primary",
+      pr0,
+      found.primary.from,
+      found.primary.src + (n ? ", deepened to pass 3:1" : ""),
+    );
+    var onP = contrastOf("#FFFFFF", pr0) >= 4.5 ? "#FFFFFF" : dark0 ? bg0 : text0;
+    set(
+      "onPrimary",
+      onP,
+      "derived",
+      (onP === "#FFFFFF" ? "white" : "dark ink") +
+        " on primary, " +
+        contrastOf(onP, pr0).toFixed(1) +
+        ":1",
+    );
+    set(
+      "primaryHover",
+      dark0 ? mixColour(pr0, "#FFFFFF", 0.16) : mixColour(pr0, "#000000", 0.14),
+      "derived",
+      dark0 ? "primary, a step lighter" : "primary, a step darker",
+    );
+    set(
+      "primarySubtle",
+      mixColour(bg0, pr0, dark0 ? 0.2 : 0.1),
+      "derived",
+      "primary at " + (dark0 ? 20 : 10) + "% over the background",
+    );
+    if (found.fontBody) set("fontBody", found.fontBody.v, found.fontBody.from, found.fontBody.src);
+    else set("fontBody", A.fontBody, "avo", avo);
+    if (found.fontHead) set("fontHead", found.fontHead.v, found.fontHead.from, found.fontHead.src);
+    else if (found.fontBody) set("fontHead", found.fontBody.v, "derived", "same as body");
+    else set("fontHead", A.fontHead, "avo", avo);
+    if (found.size) {
+      set("size", Math.max(14, Math.min(18, Math.round(found.size.v))), found.size.from, found.size.src);
+    } else set("size", 16, "avo", "text.body-regular");
+    if (found.radius) {
+      set(
+        "radius",
+        Math.max(0, Math.min(24, Math.round(found.radius.v))),
+        found.radius.from,
+        found.radius.src,
+      );
+    } else set("radius", 12, "avo", "widget default, no token yet");
+  }
+  var bg = R.background;
+  var text = R.text;
+  var pr = R.primary;
+  var dark = luminance(bg) < 0.3;
+  var nearWhite = luminance(bg) > 0.97;
+  var bubble = dark
+    ? mixColour(bg, text, 0.06)
+    : nearWhite
+      ? mixColour(bg, text, 0.04)
+      : mixColour(bg, "#FFFFFF", 0.6);
+  var mt = 0.35;
+  var muted = mixColour(text, bg, mt);
+  while (contrastOf(muted, bubble) < 4.5 && mt > 0.05) {
+    mt -= 0.05;
+    muted = mixColour(text, bg, mt);
+  }
+  var pt = pr;
+  var k = 0;
+  while (contrastOf(pt, bg) < 4.5 && k < 24) {
+    pt = mixColour(pt, text, 0.1);
+    k++;
+  }
+  var tc = parseColour(text);
+  return {
+    matched: matched,
+    src: src,
+    dark: dark,
+    primary: pr,
+    primaryHover: R.primaryHover,
+    onPrimary: R.onPrimary,
+    primarySubtle: R.primarySubtle,
+    primaryText: pt,
+    text: text,
+    muted: muted,
+    bg: bg,
+    bubble: bubble,
+    border: mixColour(bg, text, dark ? 0.16 : 0.13),
+    borderStrong: mixColour(bg, text, 0.45),
+    inputBg: dark ? mixColour(bg, text, 0.04) : nearWhite ? "#FFFFFF" : mixColour(bg, "#FFFFFF", 0.7),
+    accent: matched ? mixColour(pr, bg, dark ? 0.5 : 0.62) : A.accent1,
+    fontHead: R.fontHead,
+    fontBody: R.fontBody,
+    size: R.size,
+    radius: R.radius,
+    chipRadius: matched ? (R.radius >= 18 ? 999 : R.radius) : 999,
+    panelRadius: Math.min(24, Math.max(8, R.radius + 8)),
+    bubbleRadius: Math.min(20, Math.max(6, R.radius + 4)),
+    shadow: dark
+      ? "0 24px 56px -16px rgba(0,0,0,.65), 0 2px 8px rgba(0,0,0,.35)"
+      : "0 24px 56px -16px rgba(" + tc.r + "," + tc.g + "," + tc.b + ",.30), 0 2px 8px rgba(" +
+        tc.r + "," + tc.g + "," + tc.b + ",.08)",
+  };
+}
+
+/**
+ * The widget's tokens: the only names its styles, and the chat's, read. Any
+ * theme is just a different set of values for the same names.
+ */
+function toCssVars(t) {
+  return {
+    "--w-primary": t.primary,
+    "--w-primary-hover": t.primaryHover,
+    "--w-on-primary": t.onPrimary,
+    "--w-primary-subtle": t.primarySubtle,
+    "--w-primary-text": t.primaryText,
+    "--w-text": t.text,
+    "--w-muted": t.muted,
+    "--w-bg": t.bg,
+    "--w-bubble": t.bubble,
+    "--w-border": t.border,
+    "--w-border-strong": t.borderStrong,
+    "--w-input-bg": t.inputBg,
+    "--w-accent": t.accent,
+    "--w-font-head": t.fontHead,
+    "--w-font-body": t.fontBody,
+    "--w-size": t.size + "px",
+    "--w-radius": t.radius + "px",
+    "--w-radius-chip": t.chipRadius + "px",
+    "--w-radius-bubble": t.bubbleRadius + "px",
+    "--w-shadow": t.shadow,
+    "--p-radius": t.panelRadius + "px",
+    "--p-border": "1px solid " + t.border,
+    "--p-shadow": t.shadow,
+  };
+}
+
+/**
+ * The theme for the widget right now: `{ vars, matched, from, src }`.
+ *
+ * `from` says what themed it — `"repo"` when the primary came from the app's
+ * code, `"page"` when it was read off the page, `"avo"` when nothing was
+ * found and Avo default stands. `src` is `derive`'s, role by role.
+ *
+ * `repo` is the `theme` option as `themeOption` leaves it: read values from
+ * the app's code, which win over the page; `"avo"`, which switches matching
+ * off; or null.
+ *
+ * NEVER THROWS. A host page whose styles cannot be read — a browser quirk, a
+ * getter somebody overrode, a document mid-teardown — gets Avo default, not a
+ * widget that failed to open.
+ */
+function matchTheme(root, repo) {
+  try {
+    if (repo === "avo") return themeResult(derive({}), {});
+    var found = merge(readPage(root), repo && typeof repo === "object" ? repo : null);
+    return themeResult(derive(found), found);
+  } catch (err) {
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn("[avokaido] could not read the page's theme; using Avo default", err);
+    }
+    return themeResult(derive({}), {});
+  }
+}
+
+function themeResult(theme, found) {
+  return {
+    vars: toCssVars(theme),
+    matched: theme.matched,
+    from: theme.matched ? found.primary.from : "avo",
+    src: theme.src,
+  };
+}
+
+/**
+ * The `theme` option, cleaned: `"avo"`, read values `{ key: { v, src } }`, or
+ * null.
+ *
+ * TWO SHAPES IN, ONE OUT. A future scan of the repository hands over read
+ * values with where each came from (`{ primary: { v: "#3451D1", src:
+ * "app_theme.dart · colorScheme.primary" } }`); a person writing
+ * `data-theme='{"primary":"#3451D1","radius":10}'` writes plain values, each
+ * credited to "the app's theme".
+ *
+ * A BAD VALUE IS DROPPED, NOT TRUSTED. These go straight into colour maths
+ * that cannot take "blue" and into CSS that must not take a brace, so a colour
+ * must be a hex or rgb() colour, a size or radius a number ("15px" is 15),
+ * and a font a plain font list. One wrong value costs that value, not the
+ * theme: the page, then Avo default, fills the gap.
+ */
+function themeOption(value) {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    return value.trim().toLowerCase() === "avo" ? "avo" : null;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) return null;
+  var out = {};
+  var any = false;
+  THEME_KEYS.forEach(function (k) {
+    var entry = value[k];
+    if (entry == null) return;
+    var boxed = typeof entry === "object" && !Array.isArray(entry);
+    var v = cleanThemeValue(k, boxed ? entry.v : entry);
+    if (v === null) {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[avokaido] theme." + k + " is not usable; ignoring it");
+      }
+      return;
+    }
+    var src = boxed && entry.src ? String(entry.src).slice(0, 120) : APP_THEME;
+    out[k] = { v: v, src: src };
+    any = true;
+  });
+  return any ? out : null;
+}
+
+function cleanThemeValue(k, v) {
+  if (k === "primary" || k === "text" || k === "background") {
+    var c = typeof v === "string" ? parseColour(v) : null;
+    if (!c || !isFinite(c.r) || !isFinite(c.g) || !isFinite(c.b)) return null;
+    return hexOf(c);
+  }
+  if (k === "size" || k === "radius") {
+    var n = typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) : NaN;
+    return isFinite(n) && n >= 0 ? n : null;
+  }
+  // A font list: names, quotes, commas and hyphens, and nothing that could
+  // end the declaration it is put in.
+  if (typeof v !== "string") return null;
+  var f = v.trim();
+  if (!f || f.length > 200 || /[;{}<>\\]/.test(f)) return null;
+  return f;
+}
+
+/** Families that name no font of the site's own — dropped by `launcherFont`. */
+var GENERIC_FONTS = [
+  "serif",
+  "sans-serif",
+  "monospace",
+  "cursive",
+  "fantasy",
+  "math",
+  "emoji",
+  "fangsong",
+  "system-ui",
+  "ui-serif",
+  "ui-sans-serif",
+  "ui-monospace",
+  "ui-rounded",
+  "-apple-system",
+  "blinkmacsystemfont",
+  "inherit",
+  "initial",
+  "unset",
+];
+
+/**
+ * The launcher's font: the theme's body font, then the system's.
+ *
+ * THE SYSTEM FONT, NOT THE BROWSER'S DEFAULT, BEHIND IT. A font list read off
+ * a page ends in a generic family — `sans-serif` — which always matches, so a
+ * site font this page has not loaded (Avo's own Instrument Sans, on somebody
+ * else's site) would land on Arial, where the launcher has always been
+ * system-ui. So the generic families go, and the system stack goes after
+ * whatever names are left.
+ */
+function launcherFont(fontBody) {
+  var names = String(fontBody || "")
+    .split(",")
+    .map(function (part) { return part.trim(); })
+    .filter(function (part) {
+      if (!part || !/^(["'])?[\w .\-]+\1?$/.test(part)) return false;
+      var bare = part.replace(/^["']|["']$/g, "").toLowerCase();
+      return GENERIC_FONTS.indexOf(bare) < 0;
+    })
+    .slice(0, 4);
+  return names.concat(["system-ui", "-apple-system", "'Segoe UI'", "sans-serif"]).join(", ");
+}
+
 
 /**
  * The Avokaido idea widget — the embeddable half, and the only half that runs
@@ -40,6 +684,7 @@
  * is a support ticket nobody can reproduce. Every listener is removable and
  * every message is origin-checked.
  */
+
 
 /** Corners the launcher and the dock may sit in. */
 const CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"];
@@ -76,8 +721,14 @@ const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  * @param {"floating"|"icon"|"none"} [options.launcher]
  *        `"floating"` is the labelled pill, `"icon"` a round lightbulb in the
  *        same corner, `"none"` no button at all — open it from your own menu
- *        with `open()`, and listen for `avokaido:visibility` to know whether
- *        to show that menu item.
+ *        with `open(menuItem)`, and the box opens under that item; listen for
+ *        `avokaido:visibility` to know whether to show it.
+ * @param {"avo"|Object} [options.theme]
+ *        The app's own theme, which wins over what the widget reads off the
+ *        page: `{ primary, text, background, fontHead, fontBody, size,
+ *        radius }`, each a plain value or `{ v, src }`. `"avo"` switches
+ *        matching off and always uses Avo's look. Left out, the widget reads
+ *        the page — see `src/theme.js`.
  * @param {"bottom-right"|"bottom-left"|"top-right"|"top-left"} [options.position]
  * @param {string|Object|Function} [options.context]
  *        Where in YOUR app the person is, so the interview does not have to
@@ -381,6 +1032,24 @@ function createIdeaWidget(options) {
   if (PRELOADS.indexOf(preload) < 0) preload = "intent";
 
   /**
+   * THE LOOK: THE SITE'S, OR AVO'S. The launcher, the dock and the chat
+   * inside it take the host page's primary colour, text, background, fonts,
+   * size and corners when they can be read — see `src/theme.js` — and Avo's
+   * when they cannot.
+   *
+   * THE APP'S OWN THEME WINS when it is given (`theme`, `data-theme`): it is
+   * what the app was written to look like, where one screen of the page is
+   * only what it happens to show. `"avo"` switches the reading off.
+   *
+   * READ AT MOUNT AND AGAIN ON EVERY OPEN, never once and kept. The launcher
+   * needs colours when it is drawn, which on a single-page app can be before
+   * its buttons or its web fonts exist; by the time somebody opens the box
+   * they do. `themeNow` is the last read, `{ vars, matched, from, src }`.
+   */
+  var themeChoice = themeOption(opts.theme);
+  var themeNow = null;
+
+  /**
    * The two origins the chat loads from, connected to before it is asked
    * for: ours, and the one Flutter's renderer comes from. A hint to the
    * browser, nothing more — no request is made, and nothing is sent.
@@ -542,7 +1211,14 @@ function createIdeaWidget(options) {
       );
     }
     var launcherEl = root && root.querySelector(".launcher");
-    if (launcherEl) launcherEl.hidden = !allowed();
+    if (launcherEl) {
+      // ABOUT TO BE SEEN FOR THE FIRST TIME: the page is read again, since
+      // the audience check took a round trip and a single-page app has
+      // usually drawn its buttons by now. Hidden until this line, so the
+      // colours change where nobody can see them.
+      if (launcherEl.hidden && allowed()) readTheme();
+      launcherEl.hidden = !allowed();
+    }
     if (allowed()) armPreload();
     if (!decided) return;
     var queued = waiting;
@@ -690,6 +1366,102 @@ function createIdeaWidget(options) {
     document.body.appendChild(host);
   }
 
+  /**
+   * Reads the page's look again and puts it on the widget — see `themeNow`.
+   *
+   * ON THE HOST ELEMENT, AS CUSTOM PROPERTIES, one `setProperty` each. They
+   * inherit into the shadow root (`all: initial` resets every property but
+   * custom ones), the stylesheet reads them with Avo's values as fallbacks,
+   * and a value read off somebody's page is never pasted into a stylesheet
+   * where a stray brace could end the rule it is in.
+   *
+   * `matchTheme` never throws and answers Avo default when the page cannot
+   * be read; the try here is for the writing, which is the same promise.
+   */
+  function readTheme() {
+    themeNow = matchTheme(document.body, themeChoice);
+    try {
+      if (host) {
+        var vars = themeNow.vars;
+        for (var name in vars) {
+          if (Object.prototype.hasOwnProperty.call(vars, name)) {
+            host.style.setProperty(name, String(vars[name]));
+          }
+        }
+        host.style.setProperty("--w-font-launcher", launcherFont(vars["--w-font-body"]));
+      }
+    } catch (e) {
+      /* The stylesheet's fallbacks are Avo default: unthemed, never broken. */
+    }
+    return themeNow;
+  }
+
+  /**
+   * Whether the box is the whole screen: a phone, a phone on its side, a
+   * browser zoomed to 200%.
+   *
+   * THE SAME QUERY AS THE STYLESHEET'S, character for character. The chat
+   * hides its resize arc and corner there, and the page-drawn header must not
+   * move a box that cannot be moved; if this and the stylesheet disagreed,
+   * the box would be full screen with a handle on it, or the reverse.
+   */
+  var FULL_SCREEN = "(max-width: 560px), (max-height: 440px)";
+  var fullQuery = null;
+
+  function fullScreen() {
+    try {
+      if (!fullQuery && window.matchMedia) fullQuery = window.matchMedia(FULL_SCREEN);
+      return Boolean(fullQuery && fullQuery.matches);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Hands the frame the theme it should draw with, `avokaido:theme`. The
+   * page applies the variables itself; `full` rides along so it can draw the
+   * right corners in the same frame as the right colours.
+   */
+  function tellTheme() {
+    if (!themeNow) readTheme();
+    postToFrame({
+      type: "avokaido:theme",
+      vars: themeNow.vars,
+      matched: themeNow.matched,
+      from: themeNow.from,
+      src: themeNow.src,
+      full: fullScreen(),
+    });
+  }
+
+  /** Tells the frame whether the box is the whole screen, `avokaido:layout`. */
+  function tellLayout() {
+    postToFrame({ type: "avokaido:layout", full: fullScreen() });
+  }
+
+  /**
+   * TOLD WHEN IT CHANGES, not only on open: a phone turned on its side, a
+   * window dragged narrow, a browser zoomed in — each crosses the line with
+   * the box open, and the chat's corners must follow in the same frame.
+   * `addListener` for the Safari that predates `addEventListener` here.
+   */
+  function onFullChange() {
+    tellLayout();
+  }
+  fullScreen();
+  if (fullQuery) {
+    try {
+      if (fullQuery.addEventListener) fullQuery.addEventListener("change", onFullChange);
+      else fullQuery.addListener(onFullChange);
+      teardown.push(function () {
+        if (fullQuery.removeEventListener) fullQuery.removeEventListener("change", onFullChange);
+        else fullQuery.removeListener(onFullChange);
+      });
+    } catch (e) {
+      /* No listener: the frame still hears it on every open. */
+    }
+  }
+
   function styles() {
     var el = document.createElement("style");
     el.textContent = [
@@ -702,23 +1474,27 @@ function createIdeaWidget(options) {
       ".launcher {",
       "  position: fixed; z-index: 1;",
       "  display: inline-flex; align-items: center; gap: 8px;",
-      "  padding: 10px 16px; border: 0; border-radius: 999px;",
+      "  padding: 10px 16px; border: 0; border-radius: 999px; overflow: visible;",
       "  font: 500 14px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;",
-      /* AVOKAIDO GREEN, AND THE SAME ONE THE INTERVIEW USES.
-         The launcher and the page it opens are one surface to the person
-         pressing it, and until now they were two different greens: the
-         button was #1f7a4d and the interview inside the frame is #2f6b3b.
-         Nobody sees them side by side — the button is behind the box it
-         opens — but they are seen four hundred milliseconds apart, which is
-         close enough. */
-      "  color: #fff; background: #2f6b3b; cursor: pointer;",
+      /* THE SITE'S BODY FONT, THEN THE SYSTEM'S — never the browser's
+         default serif, which is what `all: initial` leaves behind. Worked
+         out by `launcherFont` and set with the theme. */
+      "  font-family: var(--w-font-launcher, system-ui, -apple-system, 'Segoe UI', sans-serif);",
+      /* THE SITE'S PRIMARY, AND THE SAME ONE THE CHAT USES.
+         The launcher and the box it opens are one surface to the person
+         pressing it, and both now take their colours from one theme (see
+         `readTheme`): the site's primary when it can be read, Avo's
+         #2C4112 when it cannot — the fallbacks here are Avo's, so a widget
+         whose theme never arrived is Avo's and not a broken one. */
+      "  color: var(--w-on-primary, #F5F3EC); background: var(--w-primary, #2C4112);",
+      "  cursor: pointer;",
       "  box-shadow: 0 2px 6px rgba(0,0,0,.18), 0 8px 24px rgba(0,0,0,.14);",
       /* DRAGGABLE, so a finger on it moves it rather than scrolling the page,
          and holding it neither selects text nor opens the phone's callout. */
       "  touch-action: none; user-select: none; -webkit-user-select: none;",
       "  -webkit-touch-callout: none;",
       "}",
-      ".launcher:hover { background: #24552e }",
+      ".launcher:hover { background: var(--w-primary-hover, #445A2C) }",
       /* Picked up: over the dock rather than under it, and visibly lifted. */
       ".launcher.dragging { z-index: 3; cursor: grabbing; transform: scale(1.08);",
       "  box-shadow: 0 4px 10px rgba(0,0,0,.22), 0 14px 36px rgba(0,0,0,.2) }",
@@ -727,7 +1503,43 @@ function createIdeaWidget(options) {
       ".launcher.icon { width: 48px; height: 48px; padding: 0;",
       "  justify-content: center }",
       ".launcher.icon svg { width: 22px; height: 22px; display: block }",
-      ".launcher:focus-visible { outline: 2px solid #2f6b3b; outline-offset: 3px }",
+      ".launcher:focus-visible { outline: 2px solid var(--w-primary, #2C4112);",
+      "  outline-offset: 3px }",
+      /* A REQUEST IS WAITING IN THE CLOSED BOX: a small accent dot on the
+         launcher's shoulder, ringed in the background colour so it reads on
+         any primary. × keeps a conversation, so a request somebody had
+         half-written or not yet sent is still in there — and without a mark
+         on the button, nothing on the page says so. The chat says when
+         (`avokaido:pending`); the dot only shows while the box is closed. */
+      ".launcher .dot { display: none; position: absolute; top: -1px; right: -1px;",
+      "  width: 10px; height: 10px; border-radius: 50%; pointer-events: none;",
+      "  background: var(--w-accent, #C5DC6B); box-shadow: 0 0 0 2px var(--w-bg, #F5F3EC) }",
+      /* On the round lamp, where its rim crosses the diagonal. */
+      ".launcher.icon .dot { top: 2px; right: 2px }",
+      ".launcher.pending .dot { display: block }",
+      /* POINTING AT IT SAYS WHAT IT IS: the round lamp's name, or what is
+         waiting in it. Dark — the theme's text on its background — and on
+         the side of the launcher that faces the middle of the page, so it
+         never runs off the window. Our own bubble rather than a `title`,
+         which would be a second tooltip on top of it a second later. */
+      ".launcher .tip { display: none; position: absolute; top: 50%;",
+      "  transform: translateY(-50%); padding: 6px 10px; border-radius: 8px;",
+      "  white-space: nowrap; pointer-events: none;",
+      "  font: 600 13px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif;",
+      "  font-family: var(--w-font-launcher, system-ui, -apple-system, 'Segoe UI', sans-serif);",
+      "  color: var(--w-bg, #F5F3EC); background: var(--w-text, #231502) }",
+      ".launcher.bottom-right .tip, .launcher.top-right .tip { right: calc(100% + 12px) }",
+      ".launcher.bottom-left .tip, .launcher.top-left .tip { left: calc(100% + 12px) }",
+      /* Hover only where there is a pointer that hovers: a tap would
+         otherwise leave the bubble stuck up on a phone. Focus everywhere. */
+      "@media (hover: hover) {",
+      "  .launcher.icon:hover .tip, .launcher.pending:hover .tip { display: block }",
+      "}",
+      ".launcher.icon:focus-visible .tip, .launcher.pending:focus-visible .tip { display: block }",
+      /* Never while the box is open — it is in front of what was waiting —
+         and never while the launcher is held or gliding. */
+      ".launcher[aria-expanded='true'] .dot, .launcher[aria-expanded='true'] .tip,",
+      ".launcher.dragging .tip, .launcher.settling .tip { display: none !important }",
       /* 24 PIXELS OF BREATHING ROOM, and [CORNER_GAP] in the script is the
          same number: a dropped launcher glides to where these rules put it,
          and any difference between the two is a jump at the end of the glide. */
@@ -741,13 +1553,20 @@ function createIdeaWidget(options) {
          the one thing this is supposed to be better at than a link. A
          messenger-shaped box in a corner leaves the page readable, scrollable
          and clickable while the conversation is open. */
+      /* THE CARD TAKES THE THEME: the site's background, a 1px border in its
+         border colour, its radius + 8 (kept between 8 and 24), and a soft
+         shadow tinted with its text colour — Avo's, in the fallbacks, when
+         the site cannot be read. Border-box, so the border is inside the
+         384 by 588, and the sizes the resize handles measure are the sizes
+         they set. */
       ".dock {",
       "  position: fixed; z-index: 2;",
       "  display: flex; flex-direction: column;",
-      "  width: 384px; height: 588px;",
+      "  box-sizing: border-box; width: 384px; height: 588px;",
       "  max-width: calc(100vw - 32px); max-height: calc(100vh - 32px);",
-      "  background: #fff; border-radius: 16px; overflow: hidden;",
-      "  box-shadow: 0 6px 18px rgba(0,0,0,.12), 0 20px 48px rgba(0,0,0,.22);",
+      "  background: var(--w-bg, #F5F3EC); border: var(--p-border, 1px solid #DAD6CE);",
+      "  border-radius: var(--p-radius, 20px); overflow: hidden;",
+      "  box-shadow: var(--p-shadow, 0 24px 56px -16px rgba(35,21,2,.30), 0 2px 8px rgba(35,21,2,.08));",
       "}",
       /* Sits above its own launcher rather than beside it, so opening the
          dialog never moves the button that opened it. */
@@ -840,7 +1659,7 @@ function createIdeaWidget(options) {
       "  border-top: 2px solid rgba(35,21,2,.4); border-top-left-radius: 4px;",
       "  opacity: 0 }",
       ".dock:hover .sizer.nw::after, .sizer.nw:focus-visible::after { opacity: 1 }",
-      ".sizer.nw:focus-visible { outline: 2px solid #2c4112; outline-offset: -2px;",
+      ".sizer.nw:focus-visible { outline: 2px solid var(--w-primary, #2C4112); outline-offset: -2px;",
       "  border-radius: 6px }",
       ".dock.sizing { user-select: none; transition: none !important }",
       ".dock.sizing iframe { pointer-events: none }",
@@ -865,6 +1684,19 @@ function createIdeaWidget(options) {
          black is 40% brightness, and neither takes a click until it is gone. */
       ".dock.covered .close { filter: brightness(.4); pointer-events: none }",
       ".dock.covered .grip { pointer-events: none }",
+      /* THE PAGE DRAWS ITS OWN HEADER, and says so (`avokaido:chrome`): its
+         tabs, More and × in the top 52 pixels, and its own resize arc in the
+         corner. Then ours go — an invisible grip over its tabs would eat
+         their clicks, a second × would sit on its ×, and a square bracket
+         would sit on its arc. Moving is by its header instead
+         (`avokaido:grip`); the edges and corners still resize, all but the
+         top right, where its × is. A page that never says so keeps ours. */
+      ".dock.own-chrome .grip, .dock.own-chrome .close,",
+      ".dock.own-chrome .sizer.nw::after { display: none }",
+      /* MOVED BY THE PAGE'S HEADER. The frame keeps its pointer events — the
+         drag is coming from inside it, measured there, and taking them away
+         would end it on the first move. Nothing eases behind the pointer. */
+      ".dock.moving { transition: none !important }",
       /* On a phone there is no page left to keep visible, so it takes the
          screen — a 384px card floating over a 390px viewport is a lightbox
          with wasted margins. THE SAME ON A SHORT VIEWPORT, which is what a
@@ -875,12 +1707,15 @@ function createIdeaWidget(options) {
          one person who moved the box never got the full screen. Nothing to
          drag or resize there, so the grip and the handles go.
          The preview's panel too: the screen is already all box, so there is
-         nothing to centre it in and nothing left for a scrim to dim. */
+         nothing to centre it in and nothing left for a scrim to dim.
+         No card edges either — no radius, border or shadow at the edge of a
+         screen. FULL_SCREEN in the script is this same query, and tells the
+         chat (`avokaido:layout`). */
       "@media (max-width: 560px), (max-height: 440px) {",
       "  .dock, .dock.placed, .dock.wide, .dock.panel { inset: 0 !important;",
       "          width: auto !important; height: auto !important;",
       "          max-width: none !important; max-height: none !important;",
-      "          border-radius: 0 }",
+      "          border-radius: 0; border: 0; box-shadow: none }",
       "  .grip, .sizer { display: none }",
       "  .scrim { display: none }",
       "}",
@@ -902,11 +1737,26 @@ function createIdeaWidget(options) {
     return el;
   }
 
-  function open() {
+  /**
+   * Opens the box — under [anchor] when there is one.
+   *
+   * The anchor is the element it was opened from (a menu item), an event
+   * from pressing it, or a rectangle in window pixels for an app that draws
+   * into a canvas and has no element to give. Worked out NOW, at the call,
+   * not when the box finally opens: the press it follows is now, and the
+   * link may still be deciding who sees it.
+   */
+  function open(anchor) {
+    openAt(anchorOf(anchor));
+  }
+
+  function openAt(at) {
     // Waits for the answer rather than racing it, so an app that calls
     // `openIdeas()` from its own button at boot still gets the box.
     if (!decided) {
-      waiting.push(open);
+      waiting.push(function () {
+        openAt(at);
+      });
       return;
     }
     if (!allowed()) {
@@ -919,7 +1769,175 @@ function createIdeaWidget(options) {
     // A frame built ahead is adopted as it is — already loaded, already
     // drawn — and that is the whole point of building it ahead.
     if (!overlay) buildFrame(false);
-    show();
+    show(at);
+  }
+
+  /**
+   * TOP-MENU MODE: THE BOX OPENS UNDER THE ITEM THAT OPENED IT.
+   *
+   * An app with its own "Suggest a change" item in its top menu
+   * (`launcher: "none"`) used to get the box in the bottom-right corner, a
+   * screen's width from what was pressed — it read as something else opening.
+   * Now it opens right under the item, the way any menu does.
+   *
+   * WITHOUT BEING TOLD WHICH ITEM. `openIdeas()` was documented with no
+   * argument, and every app that followed the README calls it that way, so in
+   * this mode the widget notes what the person last pressed — a pointer
+   * down, or Enter or Space — and an open within [PRESS_WITHIN_MS] of that
+   * press opens under it. Noting is all it does: capture-phase, passive,
+   * nothing stopped, nothing read but where the element is.
+   *
+   * A PRESS ON A CANVAS IS NOT A MENU ITEM. A Flutter app's whole screen is one
+   * element, so "what was pressed" is the window — see `anchorBox`, which
+   * drops anything that big and leaves the box where it would have been.
+   */
+  var PRESS_WITHIN_MS = 1500;
+  var ANCHOR_GAP = 8;
+  var lastPress = null; // { el, rect, at } — top-menu mode only
+  var anchoredBox = false; // the box on screen was placed under an anchor
+
+  function elementOf(x) {
+    return x && x.nodeType === 1 ? x : null;
+  }
+
+  /** The item itself, not the icon or the label inside it that was hit. */
+  function pressable(el) {
+    if (!el || typeof el.closest !== "function") return el;
+    return (
+      el.closest(
+        'a, button, summary, [role="button"], [role="menuitem"], [role="tab"], [role="link"]',
+      ) || el
+    );
+  }
+
+  function rectOf(el) {
+    var r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  }
+
+  function notePress(event) {
+    if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+    try {
+      var el = pressable(elementOf(event.target));
+      // Ours: a press inside the box is not a press on the app's menu.
+      if (!el || (host && (el === host || host.contains(el)))) return;
+      lastPress = { el: el, rect: rectOf(el), at: Date.now() };
+    } catch (e) {
+      /* Noting a press is never a reason for the app's own press to fail. */
+    }
+  }
+
+  if (launcher === "none") {
+    document.addEventListener("pointerdown", notePress, { capture: true, passive: true });
+    document.addEventListener("keydown", notePress, { capture: true, passive: true });
+    teardown.push(function () {
+      document.removeEventListener("pointerdown", notePress, { capture: true });
+      document.removeEventListener("keydown", notePress, { capture: true });
+    });
+  }
+
+  /**
+   * What `open` was given, as `{ el, rect }`, or null for no anchor: an
+   * element as it is; an event's item (`currentTarget`, else `target`); a
+   * rectangle; and, in top-menu mode with nothing given, the last press.
+   */
+  function anchorOf(arg) {
+    try {
+      if (arg && typeof arg === "object") {
+        if (elementOf(arg)) return { el: arg, rect: null };
+        if ("currentTarget" in arg || "target" in arg) {
+          var hit = pressable(elementOf(arg.currentTarget) || elementOf(arg.target));
+          if (hit) return { el: hit, rect: rectOf(hit) };
+        } else if (isFinite(arg.left) && isFinite(arg.top)) {
+          var right = isFinite(arg.right) ? arg.right : arg.left + Number(arg.width);
+          var bottom = isFinite(arg.bottom) ? arg.bottom : arg.top + Number(arg.height);
+          if (isFinite(right) && isFinite(bottom)) {
+            return {
+              el: null,
+              rect: { left: +arg.left, top: +arg.top, right: +right, bottom: +bottom },
+            };
+          }
+        }
+      }
+      if (launcher === "none" && lastPress && Date.now() - lastPress.at <= PRESS_WITHIN_MS) {
+        return { el: lastPress.el, rect: lastPress.rect };
+      }
+    } catch (e) {
+      /* An anchor that cannot be read opens the box where it always opened. */
+    }
+    return null;
+  }
+
+  /**
+   * Where the anchor is now, or null when it is no use as one.
+   *
+   * Measured again at the open, because a menu may have scrolled or
+   * reflowed since the press; the rectangle noted at the press stands in
+   * for an item the menu has already taken away (a dropdown closing on the
+   * same click). Nothing a quarter of the window or more — that is a page or
+   * a canvas, not an item.
+   */
+  function anchorBox(at) {
+    var r = null;
+    var el = at.el;
+    if (el && el.isConnected && el !== document.body && el !== document.documentElement) {
+      var live = el.getBoundingClientRect();
+      if (live.width > 0 && live.height > 0) r = rectOf(el);
+    }
+    if (!r && at.rect) r = at.rect;
+    if (!r) return null;
+    var w = r.right - r.left;
+    var h = r.bottom - r.top;
+    if (!(w > 0 && h > 0)) return null;
+    if (w * h >= 0.25 * window.innerWidth * window.innerHeight) return null;
+    return r;
+  }
+
+  /**
+   * Under the anchor, 8 pixels below it; left-aligned with it, or
+   * right-aligned when that keeps more of the box on screen (an item at the
+   * right of a top menu). Above it when there is no room below. Clamped
+   * like every other placement, and measured as a placed box — its height
+   * cap is the window's, not a corner's.
+   *
+   * NOT REMEMBERED. The position a person chose by dragging is theirs; one
+   * worked out from a menu item would overwrite it, and a box opened from
+   * the menu opens under the menu every time anyway.
+   */
+  function placeUnder(el, a) {
+    el.classList.add("placed");
+    var w = el.offsetWidth || 384;
+    var h = el.offsetHeight || 588;
+    var offBy = function (left) {
+      return Math.max(0, MARGIN - left) + Math.max(0, left + w - (window.innerWidth - MARGIN));
+    };
+    var left = a.left;
+    if (offBy(a.right - w) < offBy(left)) left = a.right - w;
+    var below = window.innerHeight - MARGIN - (a.bottom + ANCHOR_GAP);
+    var above = a.top - ANCHOR_GAP - MARGIN;
+    var top = h <= below || below >= above ? a.bottom + ANCHOR_GAP : a.top - ANCHOR_GAP - h;
+    placeAt(el, left, top);
+  }
+
+  /**
+   * Where the box goes for this open: under its anchor, or — for an open
+   * with none after one with an anchor — back where the person last put it,
+   * or its corner.
+   */
+  function placeForOpen(at) {
+    var box = at ? anchorBox(at) : null;
+    if (box) {
+      placeUnder(overlay, box);
+      anchoredBox = true;
+      return;
+    }
+    if (!anchoredBox) return;
+    anchoredBox = false;
+    overlay.style.left = overlay.style.top = "";
+    overlay.style.right = overlay.style.bottom = "";
+    overlay.classList.remove("placed");
+    var saved = rememberedPlace();
+    if (saved) placeAt(overlay, saved.left, saved.top);
   }
 
   /**
@@ -942,6 +1960,11 @@ function createIdeaWidget(options) {
       overlay.inert = true;
       overlay.setAttribute("aria-hidden", "true");
     }
+    // A new box: placed as the person left it, with our own grip and × until
+    // the page inside says it draws its own (`own-chrome` is a class on this
+    // element, so a fresh frame starts without it).
+    anchoredBox = false;
+    pageDrag = null;
     applyRememberedSize(overlay);
     placeRemembered(overlay);
 
@@ -1019,10 +2042,18 @@ function createIdeaWidget(options) {
     }, READY_WITHIN_MS);
   }
 
-  /** On screen: unparked, focused, and told where the person is now. */
-  function show() {
+  /**
+   * On screen: themed as the page looks now, placed (under its anchor, if it
+   * was opened from one), unparked, focused, and told where the person is.
+   */
+  function show(at) {
     shown = true;
     lastFocus = document.activeElement;
+    // Read again on every open: web fonts and an app's buttons may have
+    // arrived since the launcher was drawn. Before the box is unparked, so
+    // it is never seen in the old colours.
+    readTheme();
+    placeForOpen(at);
     overlay.classList.remove("parked");
     // Replays the rise every time it is shown, not only when it is built.
     overlay.classList.remove("shown");
@@ -1064,6 +2095,10 @@ function createIdeaWidget(options) {
     var message = whereNow();
     message.type = "avokaido:open";
     if (openMs !== null) message.openMs = Math.max(0, Math.round(openMs));
+    // The look and the shape before the open, so the page draws the open in
+    // the right colours and corners rather than repainting after it.
+    tellTheme();
+    tellLayout();
     postToFrame(message);
     if (user && typeof user.getIdToken === "function") {
       idTokenWithin(user.getIdToken, ID_TOKEN_WAIT_MS)
@@ -1125,7 +2160,8 @@ function createIdeaWidget(options) {
    *  page lets go of its connection. */
   function park() {
     if (!overlay) return;
-    overlay.classList.remove("shown", "covered");
+    overlay.classList.remove("shown", "covered", "moving");
+    pageDrag = null;
     overlay.classList.add("parked");
     overlay.inert = true;
     overlay.setAttribute("aria-hidden", "true");
@@ -1143,6 +2179,10 @@ function createIdeaWidget(options) {
     frame = null;
     frameReady = false;
     paintedAt = 0;
+    anchoredBox = false;
+    pageDrag = null;
+    // The conversation went with the frame, and whatever was waiting in it.
+    setPending(null);
   }
 
   /**
@@ -1379,18 +2419,29 @@ function createIdeaWidget(options) {
     return at;
   }
 
-  function placeRemembered(el) {
-    // Read before the element is measurable, so the clamp runs again on the
-    // first frame — offsetWidth is 0 until it is in the document.
+  /** Where the person last put the box, or null. */
+  function rememberedPlace() {
     var saved = null;
     try {
       saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
     } catch (e) {
       /* A browser with storage blocked simply does not remember. */
     }
-    if (!saved || typeof saved.left !== "number") return;
+    if (!saved || typeof saved.left !== "number") return null;
+    return saved;
+  }
+
+  function placeRemembered(el) {
+    // Read before the element is measurable, so the clamp runs again on the
+    // first frame — offsetWidth is 0 until it is in the document.
+    var saved = rememberedPlace();
+    if (!saved) return;
     requestAnimationFrame(function () {
-      if (el.isConnected) placeAt(el, saved.left, saved.top);
+      // Not over a box opened under a menu item in the meantime: that open
+      // placed it, and this frame was queued before it.
+      if (el.isConnected && !(el === overlay && anchoredBox)) {
+        placeAt(el, saved.left, saved.top);
+      }
     });
   }
 
@@ -1427,6 +2478,57 @@ function createIdeaWidget(options) {
     document.addEventListener("pointermove", move, true);
     document.addEventListener("pointerup", drop, true);
     document.addEventListener("pointercancel", drop, true);
+  }
+
+  /**
+   * Moving the box by the page's own header, `avokaido:grip`.
+   *
+   * THE HEADER IS THE PAGE'S NOW — its tabs, More and × — so our invisible
+   * grip over it had to go (see `own-chrome`), and with it the only way to
+   * hold the box. The page measures the drag instead and reports it:
+   * `start`, then `move`s and an `end`, each with `dx`, `dy` in screen pixels
+   * since the press. Screen pixels because the frame moves under the pointer
+   * as the box does — a position measured inside it would chase its own tail
+   * — and the screen does not move.
+   *
+   * THE SAME DRAG AS OURS from there: the box's place at the press plus the
+   * distance, clamped by `placeAt` on every move, remembered on the drop.
+   * Not under a preview's panel, which is not somewhere a box was put, and
+   * not on a full screen, where there is nowhere to move it. A number that
+   * is not a number moves nothing.
+   */
+  var pageDrag = null; // { left, top } of the box at the press
+
+  function pageGrip(data) {
+    var phase = data.phase;
+    var dx = data.dx;
+    var dy = data.dy;
+    var sane = typeof dx === "number" && typeof dy === "number" && isFinite(dx) && isFinite(dy);
+    var stuck = !overlay || !shown || overlay.classList.contains("panel") || fullScreen();
+    if (phase === "start") {
+      pageDrag = null;
+      if (stuck) return;
+      var box = overlay.getBoundingClientRect();
+      pageDrag = { left: box.left, top: box.top };
+      overlay.classList.add("moving");
+      return;
+    }
+    if (!pageDrag) return;
+    if (phase === "move") {
+      if (sane && !stuck) placeAt(overlay, pageDrag.left + dx, pageDrag.top + dy);
+      return;
+    }
+    if (phase !== "end") return;
+    var began = pageDrag;
+    pageDrag = null;
+    if (overlay) overlay.classList.remove("moving");
+    if (!sane || stuck) return;
+    var at = placeAt(overlay, began.left + dx, began.top + dy);
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(at));
+    } catch (err) {
+      /* Not remembering is a smaller problem than throwing while dropping. */
+    }
   }
 
   /**
@@ -1834,6 +2936,11 @@ function createIdeaWidget(options) {
       if (shown) {
         tellOpen(null);
         focusFrame();
+      } else {
+        // Built ahead: themed and shaped now, out of sight, so the open it
+        // is kept for shows it already in the site's colours.
+        tellTheme();
+        tellLayout();
       }
       emit("ready", {});
     } else if (type === "avokaido:painted") {
@@ -1883,7 +2990,65 @@ function createIdeaWidget(options) {
       if (overlay) overlay.classList.add("covered");
     } else if (type === "avokaido:uncover") {
       if (overlay) overlay.classList.remove("covered");
+    } else if (type === "avokaido:chrome") {
+      // THE PAGE DRAWS ITS OWN HEADER AND ×: ours go (see the stylesheet).
+      // Sent by the page right after it is ready; an older page never sends
+      // it and keeps our grip and ×. `own: false` hands them back.
+      if (overlay) overlay.classList.toggle("own-chrome", event.data.own === true);
+    } else if (type === "avokaido:x") {
+      // Its own ×, pressed: exactly what ours did — put away and kept.
+      close("button");
+    } else if (type === "avokaido:grip") {
+      pageGrip(event.data);
+    } else if (type === "avokaido:pending") {
+      setPending(event.data.state);
     }
+  }
+
+  /**
+   * A request waiting in the closed box — `avokaido:pending` from the chat,
+   * `{ state: "ready" | "waiting" | null }`.
+   *
+   * × KEEPS THE CONVERSATION, so a request that was ready to send, or still
+   * being asked about, is in there after the box is closed — and nothing on
+   * the page said so. The chat knows; it tells this half, and the launcher
+   * gets a dot and says which when pointed at. Reopening lands on it, which
+   * is the chat's half.
+   *
+   * TOLD TO THE HOST PAGE TOO, as `avokaido:pending` on the document, for an
+   * app with its own menu item — there is no launcher of ours to put a dot on.
+   * Anything but the two states is no request: a dot that cannot be cleared
+   * is worse than one that does not show.
+   */
+  var PENDING_SAYS = {
+    ready: "Your request is ready to send",
+    waiting: "Your request is waiting",
+  };
+  var pending = null;
+
+  function setPending(state) {
+    var next = state === "ready" || state === "waiting" ? state : null;
+    if (next === pending) return;
+    pending = next;
+    drawPending();
+    emit("pending", { state: pending });
+  }
+
+  /**
+   * The dot, the bubble's words and the accessible name, for the state now.
+   * The round lamp's bubble names it when nothing is waiting; the pill has its
+   * name written on it, and only speaks up when something is.
+   */
+  function drawPending() {
+    var el = root && root.querySelector(".launcher");
+    if (!el) return;
+    var says = pending ? PENDING_SAYS[pending] : "";
+    el.classList.toggle("pending", Boolean(pending));
+    var tip = el.querySelector(".tip");
+    if (tip) tip.textContent = says || (launcher === "icon" ? label : "");
+    var name = says ? label + ". " + says : launcher === "icon" ? label : "";
+    if (name) el.setAttribute("aria-label", name);
+    else el.removeAttribute("aria-label");
   }
   window.addEventListener("message", onMessage);
   teardown.push(function () {
@@ -1904,13 +3069,17 @@ function createIdeaWidget(options) {
       // here rather than at create, because only a launcher can be moved.
       corner = rememberedCorner() || corner;
       mount();
+      // Its colours are the page's, so the page is read before it is drawn.
+      readTheme();
       var button = document.createElement("button");
       button.type = "button";
       button.className = "launcher " + corner + (launcher === "icon" ? " icon" : "");
       button.hidden = !allowed();
       if (launcher === "icon") {
+        // The name is spoken from here and shown in our own bubble when it
+        // is pointed at (`.tip`) — not a `title`, which would put the
+        // browser's tooltip on top of ours a second later.
         button.setAttribute("aria-label", label);
-        button.title = label;
         // A lightbulb, drawn inline: no icon font or image request on
         // somebody else's page.
         button.innerHTML =
@@ -1922,6 +3091,17 @@ function createIdeaWidget(options) {
       } else {
         button.textContent = label;
       }
+      // The dot for a request waiting, and the bubble that says what it is —
+      // both hidden from a screen reader, which hears the name instead (see
+      // `drawPending`).
+      var dot = document.createElement("span");
+      dot.className = "dot";
+      dot.setAttribute("aria-hidden", "true");
+      var tip = document.createElement("span");
+      tip.className = "tip";
+      tip.setAttribute("aria-hidden", "true");
+      button.appendChild(dot);
+      button.appendChild(tip);
       button.addEventListener("pointerdown", startLauncherDrag);
       // INTENT: pointing at it, tabbing to it or touching it is the moment to
       // build the chat — the press is a few hundred milliseconds behind.
@@ -1939,6 +3119,7 @@ function createIdeaWidget(options) {
         else open();
       });
       root.appendChild(button);
+      drawPending();
     };
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", start);
@@ -1948,6 +3129,22 @@ function createIdeaWidget(options) {
     } else {
       start();
     }
+  }
+
+  /**
+   * ONCE MORE WHEN THE PAGE HAS LOADED, for the launcher's sake. It is drawn
+   * at DOMContentLoaded, before an app's web fonts — and often its buttons —
+   * exist; it should not wear Avo's green until somebody first opens the box.
+   * Only once a widget is drawn, and only once.
+   */
+  if (document.readyState !== "complete") {
+    var onLoad = function () {
+      if (host) readTheme();
+    };
+    window.addEventListener("load", onLoad);
+    teardown.push(function () {
+      window.removeEventListener("load", onLoad);
+    });
   }
 
   /**
@@ -1973,8 +3170,13 @@ function createIdeaWidget(options) {
   }
 
   return {
-    open: function () {
-      open();
+    /**
+     * Opens the box. Given the menu item it was opened from — the element,
+     * the click's event, or a rectangle in window pixels — it opens right
+     * under it; see `anchorOf`.
+     */
+    open: function (anchor) {
+      open(anchor);
     },
     close: function (reason) {
       close(reason || "api");
@@ -2045,6 +3247,30 @@ function userFrom(el) {
   return id || email || rawTraits ? { id: id, email: email, traits: traits } : null;
 }
 
+/**
+ * The app's own theme, as the tag's `data-theme` gives it, or undefined.
+ *
+ *   <script … data-theme="avo">                    always Avo's look
+ *   <script … data-theme='{"primary":"#3451D1","radius":10}'>
+ *
+ * PLAIN VALUES, because a person writes this one by hand: each is credited
+ * to "the app's theme" (see `themeOption`), and wins over what the widget
+ * reads off the page. Left out, the page is read. JSON that does not
+ * parse is reported and ignored — the page is read as if it were not there —
+ * rather than costing the widget its look over a quoting mistake.
+ */
+function themeFrom(el) {
+  var raw = (el.getAttribute("data-theme") || "").trim();
+  if (!raw) return undefined;
+  if (raw.toLowerCase() === "avo") return "avo";
+  try {
+    return themeOption(JSON.parse(raw)) || undefined;
+  } catch (err) {
+    console.warn('[avokaido] data-theme is neither "avo" nor JSON; ignoring it');
+    return undefined;
+  }
+}
+
 var script = document.currentScript;
 if (script) {
   var key = (script.getAttribute("data-key") || "").trim();
@@ -2086,6 +3312,8 @@ if (script) {
       launcher: script.getAttribute("data-launcher") || undefined,
       position: script.getAttribute("data-position") || undefined,
       preload: script.getAttribute("data-preload") || undefined,
+      // Read once: an app's theme is the app's, not a screen's.
+      theme: themeFrom(script),
       // READ ON EVERY OPEN, WHICH IS THE WHOLE REASON IT IS A FUNCTION. Every
       // other attribute here is read once, because none of them changes: the
       // key, the origin and the corner are the same on every screen of the
@@ -2120,7 +3348,9 @@ if (script) {
       ) < 0,
     });
 
-    // The other way in, for a page that already has its own button.
+    // The other way in, for a page that already has its own button. Its
+    // first argument goes straight through: `openIdeas(menuItem)`, or the
+    // click's event, opens the box under the item (see `anchorOf`).
     window.avokaido = window.avokaido || {};
     window.avokaido.openIdeas = widget.open;
     window.avokaido.closeIdeas = function () {

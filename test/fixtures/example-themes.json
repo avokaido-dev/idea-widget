@@ -1,0 +1,319 @@
+{
+  "about": "Four made-up sites plus one that cannot be read. \"read\" is what the widget took from the page or repository. \"cssVars\" are the tokens that came out, after the contrast checks.",
+  "sites": {
+    "lime-swim-club": {
+      "read": {
+        "primary": {
+          "value": "#3451D1",
+          "from": "button “Add session this week”"
+        },
+        "text": {
+          "value": "#1B2033",
+          "from": "page text"
+        },
+        "background": {
+          "value": "#FFFFFF",
+          "from": "calendar panel"
+        },
+        "fontHead": {
+          "value": "Inter, system-ui, sans-serif",
+          "from": "body and headings"
+        },
+        "fontBody": {
+          "value": "Inter, system-ui, sans-serif",
+          "from": "body and headings"
+        },
+        "size": {
+          "value": "15px",
+          "from": "page text"
+        },
+        "radius": {
+          "value": "10px",
+          "from": "button “Add session this week”"
+        }
+      },
+      "cssVars": {
+        "--w-primary": "#3451D1",
+        "--w-primary-hover": "#2D46B4",
+        "--w-on-primary": "#FFFFFF",
+        "--w-primary-subtle": "#EBEEFA",
+        "--w-primary-text": "#3451D1",
+        "--w-text": "#1B2033",
+        "--w-muted": "#6B6E7A",
+        "--w-bg": "#FFFFFF",
+        "--w-bubble": "#F6F6F7",
+        "--w-border": "#E1E2E4",
+        "--w-border-strong": "#989BA3",
+        "--w-input-bg": "#FFFFFF",
+        "--w-accent": "#B2BDEE",
+        "--w-font-head": "Inter, system-ui, sans-serif",
+        "--w-font-body": "Inter, system-ui, sans-serif",
+        "--w-size": "15px",
+        "--w-radius": "10px",
+        "--w-radius-chip": "10px",
+        "--w-radius-bubble": "14px",
+        "--w-shadow": "0 24px 56px -16px rgba(27,32,51,.30), 0 2px 8px rgba(27,32,51,.08)",
+        "--p-radius": "18px",
+        "--p-border": "1px solid #E1E2E4",
+        "--p-shadow": "0 24px 56px -16px rgba(27,32,51,.30), 0 2px 8px rgba(27,32,51,.08)"
+      }
+    },
+    "harbor-and-ink": {
+      "read": {
+        "primary": {
+          "value": "#B5452F",
+          "from": "--brand (page variable)"
+        },
+        "text": {
+          "value": "#2A1F1A",
+          "from": "page text"
+        },
+        "background": {
+          "value": "#FFFBF5",
+          "from": "page background"
+        },
+        "fontHead": {
+          "value": "Newsreader, Georgia, serif",
+          "from": "body and headings"
+        },
+        "fontBody": {
+          "value": "Newsreader, Georgia, serif",
+          "from": "body and headings"
+        },
+        "size": {
+          "value": "16px",
+          "from": "page text"
+        },
+        "radius": {
+          "value": "4px",
+          "from": "button “Basket”"
+        }
+      },
+      "cssVars": {
+        "--w-primary": "#B5452F",
+        "--w-primary-hover": "#9C3B28",
+        "--w-on-primary": "#FFFFFF",
+        "--w-primary-subtle": "#F8E9E1",
+        "--w-primary-text": "#B5452F",
+        "--w-text": "#2A1F1A",
+        "--w-muted": "#756C67",
+        "--w-bg": "#FFFBF5",
+        "--w-bubble": "#FFFDFB",
+        "--w-border": "#E3DED9",
+        "--w-border-strong": "#9F9892",
+        "--w-input-bg": "#FFFEFC",
+        "--w-accent": "#E3B6AA",
+        "--w-font-head": "Newsreader, Georgia, serif",
+        "--w-font-body": "Newsreader, Georgia, serif",
+        "--w-size": "16px",
+        "--w-radius": "4px",
+        "--w-radius-chip": "4px",
+        "--w-radius-bubble": "8px",
+        "--w-shadow": "0 24px 56px -16px rgba(42,31,26,.30), 0 2px 8px rgba(42,31,26,.08)",
+        "--p-radius": "12px",
+        "--p-border": "1px solid #E3DED9",
+        "--p-shadow": "0 24px 56px -16px rgba(42,31,26,.30), 0 2px 8px rgba(42,31,26,.08)"
+      }
+    },
+    "pocket": {
+      "read": {
+        "primary": {
+          "value": "#D6336C",
+          "from": "button “Add money”"
+        },
+        "text": {
+          "value": "#1F1A2E",
+          "from": "page text"
+        },
+        "background": {
+          "value": "#FFFFFF",
+          "from": "balance card"
+        },
+        "fontHead": {
+          "value": "'DM Sans', sans-serif",
+          "from": "body and headings"
+        },
+        "fontBody": {
+          "value": "'DM Sans', sans-serif",
+          "from": "body and headings"
+        },
+        "size": {
+          "value": "15px",
+          "from": "page text"
+        },
+        "radius": {
+          "value": "999px",
+          "from": "button “Add money”"
+        }
+      },
+      "cssVars": {
+        "--w-primary": "#D6336C",
+        "--w-primary-hover": "#B82C5D",
+        "--w-on-primary": "#FFFFFF",
+        "--w-primary-subtle": "#FBEBF0",
+        "--w-primary-text": "#D6336C",
+        "--w-text": "#1F1A2E",
+        "--w-muted": "#6D6A77",
+        "--w-bg": "#FFFFFF",
+        "--w-bubble": "#F6F6F7",
+        "--w-border": "#E2E1E4",
+        "--w-border-strong": "#9A98A1",
+        "--w-input-bg": "#FFFFFF",
+        "--w-accent": "#EFB1C7",
+        "--w-font-head": "'DM Sans', sans-serif",
+        "--w-font-body": "'DM Sans', sans-serif",
+        "--w-size": "15px",
+        "--w-radius": "24px",
+        "--w-radius-chip": "999px",
+        "--w-radius-bubble": "20px",
+        "--w-shadow": "0 24px 56px -16px rgba(31,26,46,.30), 0 2px 8px rgba(31,26,46,.08)",
+        "--p-radius": "24px",
+        "--p-border": "1px solid #E2E1E4",
+        "--p-shadow": "0 24px 56px -16px rgba(31,26,46,.30), 0 2px 8px rgba(31,26,46,.08)"
+      }
+    },
+    "northline-dark": {
+      "read": {
+        "primary": {
+          "value": "#4FD1A5",
+          "from": "--color-primary (page variable)"
+        },
+        "text": {
+          "value": "#E6E8EF",
+          "from": "page text"
+        },
+        "background": {
+          "value": "#171A23",
+          "from": "chart card"
+        },
+        "fontHead": {
+          "value": "'IBM Plex Sans', sans-serif",
+          "from": "body and headings"
+        },
+        "fontBody": {
+          "value": "'IBM Plex Sans', sans-serif",
+          "from": "body and headings"
+        },
+        "size": {
+          "value": "14px",
+          "from": "page text"
+        },
+        "radius": {
+          "value": "6px",
+          "from": "button “New chart”"
+        }
+      },
+      "cssVars": {
+        "--w-primary": "#4FD1A5",
+        "--w-primary-hover": "#6BD8B3",
+        "--w-on-primary": "#171A23",
+        "--w-primary-subtle": "#223F3D",
+        "--w-primary-text": "#4FD1A5",
+        "--w-text": "#E6E8EF",
+        "--w-muted": "#9EA0A8",
+        "--w-bg": "#171A23",
+        "--w-bubble": "#23262F",
+        "--w-border": "#383B44",
+        "--w-border-strong": "#74777F",
+        "--w-input-bg": "#1F222B",
+        "--w-accent": "#337664",
+        "--w-font-head": "'IBM Plex Sans', sans-serif",
+        "--w-font-body": "'IBM Plex Sans', sans-serif",
+        "--w-size": "14px",
+        "--w-radius": "6px",
+        "--w-radius-chip": "6px",
+        "--w-radius-bubble": "10px",
+        "--w-shadow": "0 24px 56px -16px rgba(0,0,0,.65), 0 2px 8px rgba(0,0,0,.35)",
+        "--p-radius": "14px",
+        "--p-border": "1px solid #383B44",
+        "--p-shadow": "0 24px 56px -16px rgba(0,0,0,.65), 0 2px 8px rgba(0,0,0,.35)"
+      }
+    },
+    "tidewater-rentals": {
+      "read": null,
+      "note": "Flutter web draws into a canvas, so the page has nothing to read and Avo default is used.",
+      "cssVars": {
+        "--w-primary": "#2C4112",
+        "--w-primary-hover": "#445A2C",
+        "--w-on-primary": "#F5F3EC",
+        "--w-primary-subtle": "#E3FACE",
+        "--w-primary-text": "#2C4112",
+        "--w-text": "#231502",
+        "--w-muted": "#6D6354",
+        "--w-bg": "#F5F3EC",
+        "--w-bubble": "#FBFAF7",
+        "--w-border": "#DAD6CE",
+        "--w-border-strong": "#978F83",
+        "--w-input-bg": "#FCFBF9",
+        "--w-accent": "#C5DC6B",
+        "--w-font-head": "'Space Grotesk', sans-serif",
+        "--w-font-body": "'Instrument Sans', Inter, sans-serif",
+        "--w-size": "16px",
+        "--w-radius": "12px",
+        "--w-radius-chip": "999px",
+        "--w-radius-bubble": "16px",
+        "--w-shadow": "0 24px 56px -16px rgba(35,21,2,.30), 0 2px 8px rgba(35,21,2,.08)",
+        "--p-radius": "20px",
+        "--p-border": "1px solid #DAD6CE",
+        "--p-shadow": "0 24px 56px -16px rgba(35,21,2,.30), 0 2px 8px rgba(35,21,2,.08)"
+      },
+      "withRepositoryConnected": {
+        "read": {
+          "primary": {
+            "v": "#3451D1",
+            "src": "app_theme.dart · colorScheme.primary"
+          },
+          "text": {
+            "v": "#1B2033",
+            "src": "app_theme.dart · colorScheme.onSurface"
+          },
+          "background": {
+            "v": "#FFFFFF",
+            "src": "app_theme.dart · colorScheme.surface"
+          },
+          "fontHead": {
+            "v": "Inter, system-ui, sans-serif",
+            "src": "app_theme.dart · headlineSmall"
+          },
+          "fontBody": {
+            "v": "Inter, system-ui, sans-serif",
+            "src": "app_theme.dart · bodyMedium"
+          },
+          "size": {
+            "v": 15,
+            "src": "app_theme.dart · bodyMedium.fontSize"
+          },
+          "radius": {
+            "v": 10,
+            "src": "app_theme.dart · FilledButton shape"
+          }
+        },
+        "cssVars": {
+          "--w-primary": "#3451D1",
+          "--w-primary-hover": "#2D46B4",
+          "--w-on-primary": "#FFFFFF",
+          "--w-primary-subtle": "#EBEEFA",
+          "--w-primary-text": "#3451D1",
+          "--w-text": "#1B2033",
+          "--w-muted": "#6B6E7A",
+          "--w-bg": "#FFFFFF",
+          "--w-bubble": "#F6F6F7",
+          "--w-border": "#E1E2E4",
+          "--w-border-strong": "#989BA3",
+          "--w-input-bg": "#FFFFFF",
+          "--w-accent": "#B2BDEE",
+          "--w-font-head": "Inter, system-ui, sans-serif",
+          "--w-font-body": "Inter, system-ui, sans-serif",
+          "--w-size": "15px",
+          "--w-radius": "10px",
+          "--w-radius-chip": "10px",
+          "--w-radius-bubble": "14px",
+          "--w-shadow": "0 24px 56px -16px rgba(27,32,51,.30), 0 2px 8px rgba(27,32,51,.08)",
+          "--p-radius": "18px",
+          "--p-border": "1px solid #E1E2E4",
+          "--p-shadow": "0 24px 56px -16px rgba(27,32,51,.30), 0 2px 8px rgba(27,32,51,.08)"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "about": "Avo default for the Suggest a change widget. Roles come from avokaido-dev/avo-design-tokens (main). The rest is worked out by the widget (no token yet). Used whenever the site cannot be read.",
+  "roles": {
+    "color.primary": "#2C4112",
+    "color.primary-hover": "#445A2C",
+    "color.on-primary": "#F5F3EC",
+    "color.primary-subtle": "#E3FACE",
+    "color.text": "#231502",
+    "color.background": "#F5F3EC",
+    "color.accent-1": "#C5DC6B",
+    "color.accent-2": "#EEE46B"
+  },
+  "typography": {
+    "heading": "headline-xsmall · Space Grotesk Bold 16/24",
+    "body": "body-regular · Instrument Sans 16/24"
+  },
+  "buttons": [
+    "button.primary",
+    "button.secondary"
+  ],
+  "workedOut": {
+    "bubble": "#FBFAF7",
+    "border": "#DAD6CE",
+    "borderStrong": "#978F83",
+    "muted": "#6D6354",
+    "inputBg": "#FCFBF9",
+    "radius": "12px",
+    "chipRadius": "pill",
+    "bubbleRadius": "16px",
+    "panelRadius": "20px"
+  },
+  "cssVars": {
+    "--w-primary": "#2C4112",
+    "--w-primary-hover": "#445A2C",
+    "--w-on-primary": "#F5F3EC",
+    "--w-primary-subtle": "#E3FACE",
+    "--w-primary-text": "#2C4112",
+    "--w-text": "#231502",
+    "--w-muted": "#6D6354",
+    "--w-bg": "#F5F3EC",
+    "--w-bubble": "#FBFAF7",
+    "--w-border": "#DAD6CE",
+    "--w-border-strong": "#978F83",
+    "--w-input-bg": "#FCFBF9",
+    "--w-accent": "#C5DC6B",
+    "--w-font-head": "'Space Grotesk', sans-serif",
+    "--w-font-body": "'Instrument Sans', Inter, sans-serif",
+    "--w-size": "16px",
+    "--w-radius": "12px",
+    "--w-radius-chip": "999px",
+    "--w-radius-bubble": "16px",
+    "--w-shadow": "0 24px 56px -16px rgba(35,21,2,.30), 0 2px 8px rgba(35,21,2,.08)",
+    "--p-radius": "20px",
+    "--p-border": "1px solid #DAD6CE",
+    "--p-shadow": "0 24px 56px -16px rgba(35,21,2,.30), 0 2px 8px rgba(35,21,2,.08)"
+  },
+  "statusColoursNotInAvoTokensYet": {
+    "light": {
+      "danger": "#B3261E",
+      "dangerBg": "#FBEAE8",
+      "warnBg": "#FBF3D0",
+      "warnBorder": "#E6D98F"
+    },
+    "dark": {
+      "danger": "#F2B8B5",
+      "dangerBg": "#3A1D1B",
+      "warnBg": "#3A3416",
+      "warnBorder": "#5A5120"
+    }
+  }
+}

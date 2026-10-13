@@ -29,9 +29,27 @@ export interface IdeaWidgetOptions {
   /**
    * `"floating"` (the labelled pill), `"icon"` (a round lightbulb), or
    * `"none"` if your page has its own button — open it with
-   * {@link IdeaWidget.open} and hide that button on `avokaido:visibility`.
+   * {@link IdeaWidget.open}, passing that button so the box opens right under
+   * it, and hide the button on `avokaido:visibility`.
    */
   launcher?: "floating" | "icon" | "none";
+  /**
+   * How the launcher, the box and the chat look.
+   *
+   * Left out, the widget reads your page — the primary colour of your most
+   * prominent button (or a `--brand`-style variable), your text and
+   * background colours, fonts, text size and corner radius — and works the
+   * rest out with contrast checks. A page it cannot read (one drawn into a
+   * canvas, such as a Flutter web app) gets Avo's own look.
+   *
+   * Your app's own theme, given here, wins over what is read off the page,
+   * value by value. `"avo"` switches the reading off and always uses Avo's
+   * look.
+   *
+   * @example
+   * createIdeaWidget({ key: "avk_…", theme: { primary: "#3451D1", radius: 10 } });
+   */
+  theme?: "avo" | IdeaWidgetTheme;
   position?: IdeaWidgetCorner;
   /**
    * When the chat is built ahead of the click, so it opens instantly.
@@ -99,6 +117,47 @@ export interface IdeaWidgetOptions {
   user?: IdeaWidgetUser | null;
 }
 
+/**
+ * Your app's theme. Each value is either plain (`"#3451D1"`, `10`) or
+ * `{ v, src }`, where `src` says where it was read from. Colours are hex or
+ * `rgb()`; sizes and radii are pixels (a number, or `"15px"`); fonts are a
+ * CSS font list. A value that cannot be used is dropped, and the page — then
+ * Avo's look — fills the gap. Nothing counts as matched without a `primary`
+ * (from here or from the page).
+ */
+export interface IdeaWidgetTheme {
+  primary?: string | IdeaWidgetThemeValue<string>;
+  text?: string | IdeaWidgetThemeValue<string>;
+  background?: string | IdeaWidgetThemeValue<string>;
+  fontHead?: string | IdeaWidgetThemeValue<string>;
+  fontBody?: string | IdeaWidgetThemeValue<string>;
+  size?: number | string | IdeaWidgetThemeValue<number | string>;
+  radius?: number | string | IdeaWidgetThemeValue<number | string>;
+}
+
+/** A theme value with where it came from, as a scan of your code gives it. */
+export interface IdeaWidgetThemeValue<T> {
+  v: T;
+  src?: string;
+}
+
+/**
+ * What the box opens under: your menu item, the click's event (its
+ * `currentTarget`, else its `target`), or — for an app that draws into a
+ * canvas and has no element to give — the item's rectangle in window pixels.
+ */
+export type IdeaWidgetAnchor =
+  | Element
+  | Event
+  | {
+      left: number;
+      top: number;
+      width?: number;
+      height?: number;
+      right?: number;
+      bottom?: number;
+    };
+
 /** A visitor, as your page describes them. */
 export interface IdeaWidgetUser {
   id?: string | number;
@@ -141,8 +200,16 @@ export type IdeaWidgetContext =
   | { readonly [key: string]: IdeaWidgetContext };
 
 export interface IdeaWidget {
-  /** Opens the dock. Mounts on first call. */
-  open(): void;
+  /**
+   * Opens the dock. Mounts on first call.
+   *
+   * Given the menu item it was opened from — the element, the click's event,
+   * or a rectangle — it opens right under it (above, if there is no room
+   * below), and does not change where the person last put the box. With
+   * `launcher: "none"` and nothing given, it opens under whatever was
+   * pressed in the last moment, which is the menu item that called it.
+   */
+  open(anchor?: IdeaWidgetAnchor | null): void;
   /**
    * Closes it. The reason reaches `avokaido:closed` as `detail.reason`. The
    * chat is kept, out of sight, so the next open is instant and the
@@ -206,7 +273,7 @@ export declare function matchesPath(
 declare global {
   interface Window {
     avokaido?: {
-      openIdeas?: () => void;
+      openIdeas?: (anchor?: IdeaWidgetAnchor | null) => void;
       closeIdeas?: () => void;
       destroyIdeas?: () => void;
       identify?: (user: IdeaWidgetUser | null) => void;
@@ -218,5 +285,11 @@ declare global {
     "avokaido:submitted": CustomEvent<Record<string, never>>;
     "avokaido:closed": CustomEvent<{ reason: IdeaWidgetCloseReason }>;
     "avokaido:visibility": CustomEvent<{ shown: boolean }>;
+    /**
+     * A request is waiting in the closed box (`"ready"` to send, or still
+     * `"waiting"` on answers), or nothing is (`null`). The launcher shows a
+     * dot for it; an app with its own menu item can show its own.
+     */
+    "avokaido:pending": CustomEvent<{ state: "ready" | "waiting" | null }>;
   }
 }

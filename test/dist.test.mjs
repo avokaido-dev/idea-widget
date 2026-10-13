@@ -454,6 +454,10 @@ describe("messages from the framed page", () => {
     "narrow",
     "cover",
     "uncover",
+    "chrome",
+    "x",
+    "grip",
+    "pending",
   ]) {
     it(`handles avokaido:${type}`, () => {
       assert.ok(dist.includes(`"avokaido:${type}"`), type);
@@ -469,6 +473,159 @@ describe("messages from the framed page", () => {
     // sending the very suggestion it builds. Closing two seconds later would
     // shut it on them. The check is before the timer, so no timer is armed.
     assert.match(core, /if \(event\.data\.keepOpen\) return;\n\s+\/\//);
+  });
+});
+
+describe("the page's own header", () => {
+  it("hides our grip, our × and our bracket once the page says it draws its own", () => {
+    assert.match(dist, /\.dock\.own-chrome \.grip, \.dock\.own-chrome \.close,/);
+    assert.match(dist, /\.dock\.own-chrome \.sizer\.nw::after \{ display: none \}/);
+    assert.match(core, /overlay\.classList\.toggle\("own-chrome", event\.data\.own === true\)/);
+  });
+
+  it("starts every new frame with our own chrome, for a page that never says", () => {
+    // The class lives on the box element, and a new frame is a new box.
+    assert.match(core, /overlay = document\.createElement\("div"\);\s+overlay\.className = "dock " \+ corner/);
+  });
+
+  it("keeps every resize handle but the top right's", () => {
+    assert.equal(/own-chrome \.sizer[^.]/.test(dist), false);
+    assert.match(core, /var SIZERS = \["n", "s", "w", "e", "nw", "sw", "se"\];/);
+  });
+
+  it("closes on the page's own × exactly as on ours", () => {
+    assert.match(core, /type === "avokaido:x"\) \{[\s\S]{0,120}close\("button"\);/);
+  });
+
+  it("moves by the page's header without taking the frame's pointer events", () => {
+    // The drag is coming FROM the frame; taking them away would end it.
+    assert.equal(/\.dock\.moving iframe/.test(dist), false);
+    assert.match(core, /pageDrag = \{ left: box\.left, top: box\.top \};/);
+    assert.match(core, /placeAt\(overlay, pageDrag\.left \+ dx, pageDrag\.top \+ dy\)/);
+  });
+
+  it("ignores a header drag under a preview, on a full screen, or with junk numbers", () => {
+    assert.match(core, /var sane = typeof dx === "number" && typeof dy === "number" && isFinite\(dx\) && isFinite\(dy\);/);
+    assert.match(core, /var stuck = !overlay \|\| !shown \|\| overlay\.classList\.contains\("panel"\) \|\| fullScreen\(\);/);
+  });
+
+  it("remembers where the header drag put it", () => {
+    assert.match(core, /var at = placeAt\(overlay, began\.left \+ dx, began\.top \+ dy\);\s+try \{\s+localStorage\.setItem\(STORE_KEY/);
+  });
+});
+
+describe("looking like the site", () => {
+  it("builds the theme matcher into the script", () => {
+    assert.match(dist, /function matchTheme\(root, repo\)/);
+    assert.match(dist, /function derive\(found\)/);
+  });
+
+  it("themes the card, with Avo's values whenever the theme is missing", () => {
+    assert.match(dist, /background: var\(--w-bg, #F5F3EC\); border: var\(--p-border, 1px solid #DAD6CE\);/);
+    assert.match(dist, /border-radius: var\(--p-radius, 20px\)/);
+    assert.match(dist, /box-shadow: var\(--p-shadow, /);
+    assert.match(dist, /box-sizing: border-box; width: 384px; height: 588px;/);
+  });
+
+  it("has no card edges on a full screen", () => {
+    assert.match(dist, /border-radius: 0; border: 0; box-shadow: none \}/);
+  });
+
+  it("themes the launcher: primary, on-primary, hover and focus", () => {
+    assert.match(dist, /color: var\(--w-on-primary, #F5F3EC\); background: var\(--w-primary, #2C4112\);/);
+    assert.match(dist, /\.launcher:hover \{ background: var\(--w-primary-hover, #445A2C\) \}/);
+    assert.match(dist, /\.launcher:focus-visible \{ outline: 2px solid var\(--w-primary, #2C4112\);/);
+    assert.match(dist, /font-family: var\(--w-font-launcher, system-ui/);
+  });
+
+  it("reads the page at mount and again on every open", () => {
+    assert.match(core, /mount\(\);\s+\/\/ [^\n]*\n\s+readTheme\(\);/);
+    assert.match(core, /function show\(at\) \{[\s\S]{0,400}readTheme\(\);/);
+  });
+
+  it("sets the theme as custom properties, never as stylesheet text", () => {
+    assert.match(core, /host\.style\.setProperty\(name, String\(vars\[name\]\)\)/);
+  });
+
+  it("hands the frame the theme on ready and on every open, with the full-screen flag", () => {
+    assert.match(core, /type: "avokaido:theme",[\s\S]{0,200}full: fullScreen\(\),/);
+    assert.match(core, /function tellOpen\(openMs\) \{[\s\S]{0,400}tellTheme\(\);\s+tellLayout\(\);/);
+    assert.match(core, /\} else \{[\s\S]{0,200}tellTheme\(\);\s+tellLayout\(\);\s+\}\s+emit\("ready"/);
+  });
+
+  it("tells the frame when the box becomes full screen, and stops listening on destroy", () => {
+    assert.match(core, /var FULL_SCREEN = "\(max-width: 560px\), \(max-height: 440px\)";/);
+    assert.match(dist, /@media \(max-width: 560px\), \(max-height: 440px\) \{/);
+    assert.match(core, /postToFrame\(\{ type: "avokaido:layout", full: fullScreen\(\) \}\)/);
+    assert.match(core, /fullQuery\.addEventListener\("change", onFullChange\)/);
+    assert.match(core, /fullQuery\.removeEventListener\("change", onFullChange\)/);
+  });
+
+  it("reads data-theme, and survives JSON that does not parse", () => {
+    const tag = readFileSync(join(root, "src/script-tag.js"), "utf8");
+    assert.match(tag, /theme: themeFrom\(script\)/);
+    assert.match(tag, /data-theme is neither "avo" nor JSON; ignoring it/);
+  });
+});
+
+describe("a request waiting in the closed box", () => {
+  it("puts an accent dot on the launcher, ringed in the background", () => {
+    assert.match(dist, /background: var\(--w-accent, #C5DC6B\); box-shadow: 0 0 0 2px var\(--w-bg, #F5F3EC\)/);
+    assert.match(dist, /\.launcher\.pending \.dot \{ display: block \}/);
+  });
+
+  it("says which in a dark bubble on the side that faces the page", () => {
+    assert.match(dist, /color: var\(--w-bg, #F5F3EC\); background: var\(--w-text, #231502\)/);
+    assert.match(dist, /\.launcher\.bottom-right \.tip, \.launcher\.top-right \.tip \{ right: calc\(100% \+ 12px\) \}/);
+    assert.match(dist, /"Your request is ready to send"/);
+    assert.match(dist, /"Your request is waiting"/);
+  });
+
+  it("hides both while the box is open", () => {
+    assert.match(dist, /\.launcher\[aria-expanded='true'\] \.dot, \.launcher\[aria-expanded='true'\] \.tip,/);
+  });
+
+  it("names it to a screen reader, and tells the host page", () => {
+    assert.match(core, /var name = says \? label \+ "\. " \+ says/);
+    assert.match(core, /emit\("pending", \{ state: pending \}\)/);
+  });
+
+  it("takes only the two states, and clears when the conversation goes", () => {
+    assert.match(core, /state === "ready" \|\| state === "waiting" \? state : null/);
+    assert.match(core, /function discard\(\) \{[\s\S]*?setPending\(null\);/);
+  });
+});
+
+describe("top-menu mode", () => {
+  it("passes openIdeas' argument through to open", () => {
+    const tag = readFileSync(join(root, "src/script-tag.js"), "utf8");
+    assert.match(tag, /window\.avokaido\.openIdeas = widget\.open;/);
+    assert.match(core, /open: function \(anchor\) \{\s+open\(anchor\);/);
+  });
+
+  it("notes the last press, only without a launcher, and removes the listeners", () => {
+    assert.match(core, /if \(launcher === "none"\) \{\s+document\.addEventListener\("pointerdown", notePress, \{ capture: true, passive: true \}\);/);
+    assert.match(core, /document\.removeEventListener\("pointerdown", notePress, \{ capture: true \}\);/);
+    assert.match(core, /var PRESS_WITHIN_MS = 1500;/);
+  });
+
+  it("works out the anchor at the call, not when the link has answered", () => {
+    assert.match(core, /function open\(anchor\) \{\s+openAt\(anchorOf\(anchor\)\);/);
+  });
+
+  it("never takes a page-sized element for a menu item", () => {
+    assert.match(core, /if \(w \* h >= 0\.25 \* window\.innerWidth \* window\.innerHeight\) return null;/);
+  });
+
+  it("opens 8 pixels under it, through the usual clamp, and does not remember it", () => {
+    assert.match(core, /var ANCHOR_GAP = 8;/);
+    const body = core.match(/function placeUnder\(el, a\) \{[\s\S]*?\n  \}\n/)[0];
+    assert.match(body, /placeAt\(el, left, top\);/);
+    assert.equal(/localStorage|STORE_KEY/.test(body), false);
+  });
+
+  it("is not moved off its item by the remembered place", () => {
+    assert.match(core, /if \(el\.isConnected && !\(el === overlay && anchoredBox\)\)/);
   });
 });
 

@@ -1,5 +1,58 @@
 # Changelog
 
+## 1.12.0
+
+**It looks like your site, opens under your menu, and the chat draws its own
+header.** The host-page half of the "Suggest a change" redesign.
+
+- **Theme matching.** The widget reads your page — the primary colour from a
+  `--brand`-style variable or your most prominent coloured button, your text
+  and background colours, fonts, text size and button radius — and works the
+  rest out with contrast checks (the design handoff's matcher, ported line for
+  line in `src/theme.js` and held to its example themes in
+  `test/theme.test.mjs`). The launcher is your primary with on-primary text and
+  hover, in your body font; the box is a card in your background colour with
+  your radius + 8, a 1px border and a shadow tinted with your text colour (none
+  of those on a full screen). Read on load and again on every open, read-only.
+  No primary found means Avo default, everywhere — now #2C4112 on #F5F3EC with
+  a 20px card, from avo-design-tokens, where the launcher used to be #2f6b3b
+  on a white 16px card.
+- **Canvas apps** (Flutter web, `data-render="canvas"`, or a canvas over 60%
+  of the window) are not read, and get Avo default unless you give a theme.
+- **`data-theme` / `theme`**: your app's theme as JSON with plain values
+  (`{"primary":"#3451D1","radius":10}`), which wins over the page value by
+  value — or `"avo"` to switch matching off. Bad values are dropped and bad
+  JSON ignored, with a warning.
+- **Top-menu mode opens under the item.** `openIdeas(element)` (or the click's
+  event, or a rectangle for a canvas app) opens the box 8px under that item,
+  left- or right-aligned to stay on screen, above it when there is no room
+  below. With `launcher: "none"` and no argument it uses what was pressed in
+  the last 1.5 s, so existing `openIdeas()` calls get it too. A menu open does
+  not overwrite where the person dragged the box.
+- **A request waiting** in the closed box puts an accent dot on the launcher,
+  and pointing at it says "Your request is ready to send" or "Your request is
+  waiting" (also in its accessible name). New `avokaido:pending` event on the
+  document, `detail.state`, for an app with its own menu item.
+- **The round lamp names itself** in a dark bubble when pointed at, instead
+  of the browser's `title` tooltip.
+
+**New messages with the chat** (see "Messages between the widget and the chat"
+in the README):
+
+- From the chat: `avokaido:chrome` `{ own: true }` hides the widget's
+  invisible grip, its × and its corner bracket, because the chat draws its own
+  header (tabs, More, ×) and resize arc — every edge and corner but the top
+  right still resizes; `avokaido:x` is the chat's own ×; `avokaido:grip`
+  `{ phase, dx, dy }` moves the box by the chat's header, in screen pixels
+  since the press; `avokaido:pending` `{ state }`.
+- To the chat: `avokaido:theme` `{ vars, matched, from, src, full }` on ready
+  and before every open; `avokaido:layout` `{ full }` on ready, before every
+  open, and whenever the window crosses the full-screen line (561 × 441).
+
+A chat that sends none of the new messages gets the box it had — grip, × and
+all — in the new colours. The chat half ships in cloud_services' matching
+release.
+
 ## 1.11.0
 
 **Room for a preview of the change.** The framed page can now show a

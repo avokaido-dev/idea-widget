@@ -278,11 +278,12 @@ Three ways for people to open it, all onto the same dock over your page:
 
 - **The labelled pill** (the default) — `data-launcher` left out.
 - **A round icon** in the same corner — `data-launcher="icon"`. The label
-  becomes its tooltip and accessible name.
+  becomes its accessible name, and pointing at it shows it in a small bubble.
 - **A button in your own navigation** — `data-launcher="none"`, and your
-  button calls `window.avokaido.openIdeas()`. If the link limits who sees it,
-  hide your button when the widget says so, or it will offer a button that
-  does nothing:
+  button calls `window.avokaido.openIdeas()`. The box opens **right under
+  your button**, the way a menu does, rather than in a corner of the screen.
+  If the link limits who sees it, hide your button when the widget says so,
+  or it will offer a button that does nothing:
 
 ```js
 document.addEventListener("avokaido:visibility", (e) => {
@@ -292,6 +293,84 @@ document.addEventListener("avokaido:visibility", (e) => {
 myIdeasButton.hidden = !window.avokaido?.isShown?.();
 ```
 
+**Which button it opens under.** Pass it, and there is no guessing:
+
+```js
+myIdeasButton.addEventListener("click", (e) => window.avokaido.openIdeas(e.currentTarget));
+// or the event itself — its currentTarget is used
+myIdeasButton.addEventListener("click", window.avokaido.openIdeas);
+```
+
+Called with nothing, as `openIdeas()` always was, it opens under whatever the
+person pressed in the last second and a half — by pointer, or by Enter or
+Space — which is the menu item that called it. It is 8 pixels below the item,
+lined up with its left edge (or its right edge, for an item at the right of
+the menu), and above it if there is no room below; on a phone it is the full
+screen as always. Where the person last dragged the box is kept for the
+floating launcher, and not overwritten by a menu open. An app that draws into
+a canvas (Flutter web) has no element to give, so it can pass the item's
+rectangle in window pixels instead — `openIdeas({ left, top, width, height })`;
+without one the box opens where it always did.
+
+**Something waiting in it.** Closing the box keeps the conversation, so a
+request the person had not yet sent is still in there. The launcher then gets
+a small dot, and pointing at it says *"Your request is ready to send"* or
+*"Your request is waiting"*. With your own menu item there is no launcher to
+put the dot on, so the same thing is told to your page:
+
+```js
+document.addEventListener("avokaido:pending", (e) => {
+  myIdeasButton.classList.toggle("has-request", e.detail.state !== null);
+  // e.detail.state: "ready" | "waiting" | null
+});
+```
+
+## Looking like your site
+
+The box sits on your page, so it takes on your page's look: your primary
+colour on the launcher and the buttons, your text and background colours,
+your fonts, your text size and your corner radius. Everything else — hover
+colours, borders, the soft fill behind your own messages — is worked out from
+those, with contrast checks, so text stays readable on whatever you chose.
+
+What it reads, in this order:
+
+- **The primary colour** from a page variable (`--brand`, `--primary`,
+  `--color-primary`, `--bs-primary`, `--md-sys-color-primary` and a few
+  others) if it is a real colour and not a grey — otherwise from your most
+  prominent coloured button, which also gives the corner radius.
+- **Text and background** from the page's text colour and its largest neutral
+  panel (or the page background).
+- **Fonts and size** from the page text, and the first `h1` or `h2`.
+
+It reads on load and again every time the box opens, read-only: computed
+styles and positions, nothing changed on your page. **Without a primary
+colour nothing is matched**, and the widget uses
+[Avokaido's own look](https://github.com/avokaido-dev/avo-design-tokens) — half
+a match looks worse than none.
+
+**Apps drawn into a canvas** — Flutter web, or anything with a canvas over
+most of the window — have nothing on the page to read, so they get Avokaido's
+look unless you say what yours is. Mark such a page with `data-render="canvas"`
+on `<body>` if the widget does not spot it. Then give it your theme:
+
+```html
+<script src="https://app-avokaido-eu.web.app/widget/v1.js"
+        data-key="avk_YOUR_KEY"
+        data-theme='{"primary":"#3451D1","text":"#1B2033","background":"#FFFFFF","fontBody":"Inter, sans-serif","size":15,"radius":10}'
+        defer></script>
+```
+
+Any of `primary`, `text`, `background`, `fontHead`, `fontBody`, `size` and
+`radius`; what you give wins over what is read off the page, value by value.
+Colours are hex or `rgb()`, sizes and radii are pixels, fonts are a CSS font
+list. A value that cannot be used is dropped with a warning, and JSON that does
+not parse is ignored, so a typo costs that value rather than the widget's look.
+The `theme` option takes the same object.
+
+**To always use Avokaido's look**, whatever your page shows:
+`data-theme="avo"` (or `theme: "avo"`).
+
 ## Configuration
 
 Script tag attributes, and the equivalent options:
@@ -300,8 +379,9 @@ Script tag attributes, and the equivalent options:
 |---|---|---|---|
 | `data-key` | `key` | — | **Required.** Your `avk_…` link key. |
 | `data-label` | `label` | `"Suggest a change"` | Launcher text, and the iframe's accessible title. |
-| `data-launcher` | `launcher` | `"floating"` | `"icon"` for a round lightbulb, `"none"` if your page has its own button. See [Your own menu item, or an icon](#your-own-menu-item-or-an-icon). |
+| `data-launcher` | `launcher` | `"floating"` | `"icon"` for a round lightbulb, `"none"` if your page has its own button — the box then opens under it. See [Your own menu item, or an icon](#your-own-menu-item-or-an-icon). |
 | `data-position` | `position` | `"bottom-right"` | Any of the four corners — where the launcher starts, until the person drags it to another. An unrecognised value falls back rather than leaving the dock unpositioned. |
+| `data-theme` | `theme` | read from your page | Your app's theme as JSON — `{"primary":"#3451D1","radius":10}` — which wins over what is read off the page, or `"avo"` to always use Avokaido's look. See [Looking like your site](#looking-like-your-site). |
 | `data-preload` | `preload` | `"intent"` | When the chat is built ahead of the click, so it opens instantly: `"intent"` when the launcher is pointed at, focused or touched, or after a few idle seconds; `"eager"` as soon as the launcher may show (an app's own dashboard); `"off"` only on the click. Built ahead, it stays out of sight and holds no connection until opened, and closing keeps it for the next open. |
 | `data-context` | `context` | none | Where in your app the person is, so the interview need not ask. Re-read on every open — keep it current as they navigate. The option also takes an object or a function; see [Telling it where the person is](#telling-it-where-the-person-is). |
 | `data-route` | `route` | on | Send the page's path and hash, so a suggestion says which screen it is about. The query string is never sent either way. `data-route="off"` for an app whose paths name things that must not leave it; see [What it sends](#what-it-sends). |
@@ -391,15 +471,19 @@ If you already have a "feedback" button, turn the launcher off and call it:
 
 ```js
 document.querySelector("#my-feedback-button")
-  .addEventListener("click", () => window.avokaido.openIdeas());
+  .addEventListener("click", (e) => window.avokaido.openIdeas(e.currentTarget));
 ```
 
+Passing the button opens the box right under it; see
+[Your own menu item, or an icon](#your-own-menu-item-or-an-icon).
+
 `window.avokaido` also has `closeIdeas()` and `destroyIdeas()`. With the npm
-package you get the same three on the object `createIdeaWidget` returns.
+package you get the same three on the object `createIdeaWidget` returns, as
+`open(anchor)`, `close()` and `destroy()`.
 
 ## Events
 
-Three DOM events on `document`, so you can measure the thing without
+DOM events on `document`, so you can measure the thing without
 instrumenting our iframe:
 
 ```js
@@ -408,7 +492,13 @@ document.addEventListener("avokaido:submitted", () => {});
 document.addEventListener("avokaido:closed", (e) => {
   // e.detail.reason: "button" | "launcher" | "escape" | "page" | "submitted" | "api"
 });
+document.addEventListener("avokaido:pending", (e) => {
+  // e.detail.state: "ready" | "waiting" | null — a request waiting in the closed box
+});
 ```
+
+`avokaido:visibility` (`detail.shown`) is described under
+[Your own menu item, or an icon](#your-own-menu-item-or-an-icon).
 
 `reason` is the only distinction worth anything in that number: it separates a
 suggestion that was sent from one abandoned.
@@ -458,17 +548,23 @@ on the hosted side.
   to exactly where and how big it was when the preview closes. Escape and the
   × still close it; closing drops the panel. On a phone the box is already the
   whole screen, and nothing changes.
+- **It reads your page's look, and changes nothing.** Computed styles and
+  positions of your buttons, panels and headings, on load and on every open —
+  see [Looking like your site](#looking-like-your-site).
 - **It can be moved.** A corner is still *somewhere*, and on a page with a
-  left-hand nav the left corner is over the nav. There is an invisible drag grip
-  along the dock's title row; the position is remembered per browser and
-  re-clamped on drop, on open, and on window resize.
+  left-hand nav the left corner is over the nav. Hold the box's header — the
+  row with its tabs and × — and drag; the position is remembered per browser
+  and re-clamped on drop, on open, and on window resize.
+- **It can be resized** from every edge and the bottom corners and top-left
+  one — not the top right, where its × is.
 - **So can the launcher**, to any of the four corners. Hold it and drag; let go
   and it glides to the nearest corner, 24px in from both edges, and the dock
   follows it there. A press that barely moves is still a press. The corner is
   remembered per browser and wins over `data-position`, which is only where it
   starts.
-- **384×588**, clamped to the viewport, full-screen under 560px wide or 440px
-  tall.
+- **384×588**, clamped to the viewport, full-screen under 561px wide or 441px
+  tall. A card with your corner radius (plus 8), a 1px border and a soft
+  shadow; on a full screen, none of those.
 - **One global**, `window.avokaido`. One `<div>`. Three window listeners, all
   removed by `destroy()`.
 
@@ -570,6 +666,13 @@ to a link limited to certain visitors: as the `Authorization` header of that
 one check, verified and dropped like the rest. Never a cookie
 (`credentials: "omit"`), never in a URL.
 
+**The look it matched — to the chat in the box only**, so the chat can draw
+in your colours: the colours, fonts, size and radius it worked out, and where
+each came from. "Where" can name your most prominent button's label and your
+first heading, cut to a couple of dozen characters (`button “Add session this
+week”`). It is posted to the chat's frame on our origin and is not put in a
+URL. With `data-theme="avo"` nothing is read off your page at all.
+
 Everything else that reaches us is what the person typed and any screenshot they
 chose to share.
 
@@ -590,10 +693,47 @@ key to hold an actual interview against the hosted service:
 http://127.0.0.1:8765/example/index.html?key=avk_YOUR_KEY
 ```
 
-`src/widget.js` is the whole widget. `src/script-tag.js` reads the `data-*`
-attributes; `src/index.js` is the package entry. `dist/v1.js` is generated and
+`src/widget.js` is the whole widget, and `src/theme.js` the theme matcher it
+reads your page with. `src/script-tag.js` reads the `data-*` attributes;
+`src/index.js` is the package entry. `dist/v1.js` is generated and
 committed, so what we serve can be diffed against what is published without
 running anything.
+
+### Messages between the widget and the chat
+
+The widget and the chat page in its frame talk by `postMessage`, always to and
+from the chat's origin, and the widget also checks that a message came from its
+own frame. Not something your page sends or receives — listed here for whoever
+works on either half. A message one half does not know is ignored, which is
+what lets an older widget frame a newer chat and the reverse.
+
+From the chat to the widget:
+
+| Message | Payload | What the widget does |
+|---|---|---|
+| `avokaido:ready` | — | The chat is up: it is told the theme and layout, and `open` if the box is showing. |
+| `avokaido:painted` | `bootMs` | First frame drawn; the open's cost is reported in `open.openMs`. |
+| `avokaido:submitted` | `keepOpen?` | Emits `avokaido:submitted`; closes 2.2 s later unless `keepOpen`. |
+| `avokaido:close` | — | Closes and throws the conversation away. |
+| `avokaido:dismiss` | — | Escape pressed inside the chat: closes and keeps it. |
+| `avokaido:x` | — | The chat's own × pressed: closes and keeps it, as the widget's × did. |
+| `avokaido:chrome` | `own: boolean` | `true`: the chat draws its own header, × and resize arc, so the widget's invisible grip, × and corner bracket go. Sent right after `ready`; a chat that never sends it keeps the widget's. |
+| `avokaido:grip` | `phase: "start" \| "move" \| "end"`, `dx`, `dy` | The box moved by the chat's header: `dx`, `dy` are screen pixels since the press. Ignored under the preview panel, on a full screen, and with numbers that are not finite. The end is remembered as the box's place. |
+| `avokaido:pending` | `state: "ready" \| "waiting" \| null` | A request is waiting in the box: the launcher's dot and bubble while it is closed, and `avokaido:pending` on the host page. |
+| `avokaido:hide` / `avokaido:show` | — | Transparent for a screenshot, and back (6 s watchdog). |
+| `avokaido:expand` / `avokaido:collapse` | — | The console's 768 × 640, and back. |
+| `avokaido:wide` / `avokaido:narrow` | — | The centred preview panel over a scrim, and back. |
+| `avokaido:cover` / `avokaido:uncover` | — | The chat shows its own scrim: the widget's × and grip go under it. |
+
+From the widget to the chat:
+
+| Message | Payload | When |
+|---|---|---|
+| `avokaido:open` | `route?`, `at?`, `openMs?` | Every open (and again once the chat has painted). |
+| `avokaido:closed` | — | Put away and kept. |
+| `avokaido:visitor` | `token` | On open, when the host app gave `getIdToken`. |
+| `avokaido:theme` | `vars`, `matched`, `from: "page" \| "repo" \| "avo"`, `src`, `full` | On `ready` and before every `open`. `vars` are the `--w-*` and `--p-*` CSS variables to apply; `src` says, per role, `{ tag, text }` where it came from; `full` as in `layout`. |
+| `avokaido:layout` | `full: boolean` | On `ready`, before every `open`, and whenever the window crosses into or out of full screen (under 561 px wide or 441 px tall), where the chat hides its resize arc and corners. |
 
 `example/index.html` drives the programmatic API and logs the widget's events;
 `example/script-tag.html` is exactly what a customer pastes. Both need to be
