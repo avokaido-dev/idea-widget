@@ -10,6 +10,7 @@
  */
 
 import { createIdeaWidget } from "./widget.js";
+import { themeOption } from "./theme.js";
 
 /** What `data-route` may say to switch the route off. */
 var ROUTE_OFF = ["off", "false", "no", "0"];
@@ -38,6 +39,30 @@ function userFrom(el) {
     }
   }
   return id || email || rawTraits ? { id: id, email: email, traits: traits } : null;
+}
+
+/**
+ * The app's own theme, as the tag's `data-theme` gives it, or undefined.
+ *
+ *   <script … data-theme="avo">                    always Avo's look
+ *   <script … data-theme='{"primary":"#3451D1","radius":10}'>
+ *
+ * PLAIN VALUES, because a person writes this one by hand: each is credited
+ * to "the app's theme" (see `themeOption`), and wins over what the widget
+ * reads off the page. Left out, the page is read. JSON that does not
+ * parse is reported and ignored — the page is read as if it were not there —
+ * rather than costing the widget its look over a quoting mistake.
+ */
+function themeFrom(el) {
+  var raw = (el.getAttribute("data-theme") || "").trim();
+  if (!raw) return undefined;
+  if (raw.toLowerCase() === "avo") return "avo";
+  try {
+    return themeOption(JSON.parse(raw)) || undefined;
+  } catch (err) {
+    console.warn('[avokaido] data-theme is neither "avo" nor JSON; ignoring it');
+    return undefined;
+  }
 }
 
 var script = document.currentScript;
@@ -81,6 +106,8 @@ if (script) {
       launcher: script.getAttribute("data-launcher") || undefined,
       position: script.getAttribute("data-position") || undefined,
       preload: script.getAttribute("data-preload") || undefined,
+      // Read once: an app's theme is the app's, not a screen's.
+      theme: themeFrom(script),
       // READ ON EVERY OPEN, WHICH IS THE WHOLE REASON IT IS A FUNCTION. Every
       // other attribute here is read once, because none of them changes: the
       // key, the origin and the corner are the same on every screen of the
@@ -115,7 +142,9 @@ if (script) {
       ) < 0,
     });
 
-    // The other way in, for a page that already has its own button.
+    // The other way in, for a page that already has its own button. Its
+    // first argument goes straight through: `openIdeas(menuItem)`, or the
+    // click's event, opens the box under the item (see `anchorOf`).
     window.avokaido = window.avokaido || {};
     window.avokaido.openIdeas = widget.open;
     window.avokaido.closeIdeas = function () {
