@@ -381,6 +381,11 @@ the widget's links). It reaches your pages within a minute and needs no
 change to your app. It also wins over a `data-theme` in your code. In
 code, the same choice is `data-theme="avo"` (or `theme: "avo"`).
 
+**Each person can switch it for themselves**, in the box's More menu: "Use
+Avokaido's colours" or "Use this site's colours". It is remembered in their
+browser and changes only their launcher and box, never your page, and wins
+over the console's setting and your `data-theme` for that person alone.
+
 ## Configuration
 
 Script tag attributes, and the equivalent options:

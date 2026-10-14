@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.15.0
+
+**Each person can switch the box between the site's colours and
+Avokaido's, for themselves.** The box's More menu (the chat's half) says
+"Use Avokaido's colours" or "Use this site's colours" and sends
+`avokaido:look`. The widget keeps the choice in this browser
+(`avokaido.ideas.look`), puts it on the launcher and the box at once, and
+tells the chat. It never changes the host page, and nobody else's box.
+
+- Order: the person's choice, then the team's (`look` from the audience
+  check, set in the console), then the app's `theme` / `data-theme`. "This
+  site's colours" undoes an `"avo"` from the team or the code for that
+  person only.
+- `avokaido:theme` now also carries `look` (`"avo"` | `"site"`) and
+  `siteLook`: whether the page has colours to match, so the chat offers
+  the switch only when there is somewhere to switch to. On Avokaido's look
+  the page is read once more to know.
+
 ## 1.14.0
 
 **The team can choose Avokaido's look over the site's, from the console.**
