@@ -375,8 +375,11 @@ list. A value that cannot be used is dropped with a warning, and JSON that does
 not parse is ignored, so a typo costs that value rather than the widget's look.
 The `theme` option takes the same object.
 
-**To always use Avokaido's look**, whatever your page shows:
-`data-theme="avo"` (or `theme: "avo"`).
+**To always use Avokaido's look**, whatever your page shows, choose
+**Avokaido's look** for the link in the Avokaido console (Feature ideas →
+the widget's links). It reaches your pages within a minute and needs no
+change to your app. It also wins over a `data-theme` in your code. In
+code, the same choice is `data-theme="avo"` (or `theme: "avo"`).
 
 ## Configuration
 

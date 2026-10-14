@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.13.1 — one script tag on your page.
+ * Avokaido idea widget 1.14.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -1225,6 +1225,10 @@ function createIdeaWidget(options) {
    * what the app was written to look like, where one screen of the page is
    * only what it happens to show. `"avo"` switches the reading off.
    *
+   * AND THE TEAM'S CHOICE WINS OVER BOTH: a link set to Avokaido's look in
+   * the console (`look: "avo"` from the server, see the audience check) is
+   * Avo default whatever the page or the code says.
+   *
    * READ AT MOUNT AND AGAIN ON EVERY OPEN, never once and kept. The launcher
    * needs colours when it is drawn, which on a single-page app can be before
    * its buttons or its web fonts exist; by the time somebody opens the box
@@ -1484,6 +1488,16 @@ function createIdeaWidget(options) {
         paths: Array.isArray(body.paths) ? body.paths : [],
         visitor: Boolean(body.visitor),
       };
+      // THE TEAM'S LOOK: `"avo"` when the link is set to Avokaido's look in
+      // the console, which wins over the page and over the app's own `theme`
+      // — it is how a team that does not like what was read goes back,
+      // without a release of its app. Anything else, a missing field
+      // included, leaves the look as it is. Here, before the button is first
+      // shown (`settle`), so it is never seen in the site's colours first.
+      if (body.look === "avo" && themeChoice !== "avo") {
+        themeChoice = "avo";
+        if (host) readTheme();
+      }
       if (rules.paths.length > 0) watchRoute();
       checkVisitor();
     })
