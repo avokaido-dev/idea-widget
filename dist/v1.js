@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.14.0 — one script tag on your page.
+ * Avokaido idea widget 1.15.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -1229,6 +1229,11 @@ function createIdeaWidget(options) {
    * the console (`look: "avo"` from the server, see the audience check) is
    * Avo default whatever the page or the code says.
    *
+   * AND EACH PERSON'S OWN CHOICE WINS FOR THEM: the box's More menu says
+   * "Use Avokaido's colours" or "Use this site's colours" (`avokaido:look`
+   * from the chat), remembered in this browser ([LOOK_KEY]) and nobody
+   * else's. It changes the launcher and the box, never the page.
+   *
    * READ AT MOUNT AND AGAIN ON EVERY OPEN, never once and kept. The launcher
    * needs colours when it is drawn, which on a single-page app can be before
    * its buttons or its web fonts exist; by the time somebody opens the box
@@ -1241,7 +1246,12 @@ function createIdeaWidget(options) {
    * once it is looked at. Otherwise the launcher on a Flutter app wears Avo's
    * green until somebody first opens the box.
    */
-  var themeChoice = themeOption(opts.theme);
+  var codeChoice = themeOption(opts.theme);
+  /** `"avo"` when the team set the link to Avokaido's look, else null. */
+  var teamLook = null;
+  var LOOK_KEY = "avokaido.ideas.look";
+  /** This person's own choice, `"avo"` or `"site"`, or null for none. */
+  var personalLook = rememberedLook();
   var themeNow = null;
   var THEME_RETRIES = [500, 1000, 2000, 4000, 8000];
   var themeRetries = 0;
@@ -1494,8 +1504,8 @@ function createIdeaWidget(options) {
       // without a release of its app. Anything else, a missing field
       // included, leaves the look as it is. Here, before the button is first
       // shown (`settle`), so it is never seen in the site's colours first.
-      if (body.look === "avo" && themeChoice !== "avo") {
-        themeChoice = "avo";
+      if (body.look === "avo" && teamLook !== "avo") {
+        teamLook = "avo";
         if (host) readTheme();
       }
       if (rules.paths.length > 0) watchRoute();
@@ -1587,8 +1597,49 @@ function createIdeaWidget(options) {
    * `matchTheme` never throws and answers Avo default when the page cannot
    * be read; the try here is for the writing, which is the same promise.
    */
+  /**
+   * The theme option a read uses: this person's choice, then the team's,
+   * then the app's code. "This site's colours" undoes an `"avo"` from the
+   * team or the code for this person only, and keeps any colours the code
+   * gives — it is the page matched, not the page ignored.
+   */
+  function themeChoice() {
+    var code = codeChoice === "avo" ? null : codeChoice;
+    if (personalLook === "avo") return "avo";
+    if (personalLook === "site") return code;
+    if (teamLook === "avo") return "avo";
+    return codeChoice;
+  }
+
+  /** The person's remembered look, or null. Storage can refuse: then none. */
+  function rememberedLook() {
+    try {
+      var saved = localStorage.getItem(LOOK_KEY);
+      return saved === "avo" || saved === "site" ? saved : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * `avokaido:look` from the chat: this person wants Avokaido's colours or
+   * the site's. Kept for their next visit, put on the launcher and the box
+   * now, and told back to the chat, which draws with what it is told.
+   */
+  function setLook(look) {
+    if (look !== "avo" && look !== "site") return;
+    personalLook = look;
+    try {
+      localStorage.setItem(LOOK_KEY, look);
+    } catch (e) {
+      /* Private mode, a full quota: it holds for this visit only. */
+    }
+    readTheme();
+    tellTheme();
+  }
+
   function readTheme() {
-    themeNow = matchTheme(document.body, themeChoice);
+    themeNow = matchTheme(document.body, themeChoice());
     if (themeNow.waiting) retryTheme();
     try {
       if (host) {
@@ -1668,6 +1719,14 @@ function createIdeaWidget(options) {
       var entry = themeNow.src[role];
       if (entry && entry.tag) tags[role] = { tag: entry.tag };
     });
+    // WHICH LOOK IS ON, AND WHETHER THE OTHER ONE EXISTS, for the chat's
+    // More menu. On Avokaido's look the page is read once more, as the
+    // site's look would read it, so the chat offers "Use this site's
+    // colours" only where there are colours to use.
+    var avoOn = themeChoice() === "avo";
+    var siteLook = avoOn
+      ? matchTheme(document.body, codeChoice === "avo" ? null : codeChoice).matched
+      : themeNow.matched;
     postToFrame({
       type: "avokaido:theme",
       vars: themeNow.vars,
@@ -1675,6 +1734,8 @@ function createIdeaWidget(options) {
       from: themeNow.from,
       src: tags,
       full: fullScreen(),
+      look: avoOn ? "avo" : "site",
+      siteLook: siteLook,
     });
   }
 
@@ -3246,6 +3307,8 @@ function createIdeaWidget(options) {
       pageGrip(event.data);
     } else if (type === "avokaido:pending") {
       setPending(event.data.state);
+    } else if (type === "avokaido:look") {
+      setLook(event.data.look);
     }
   }
 

@@ -561,6 +561,20 @@ describe("looking like the site", () => {
     assert.match(core, /fullQuery\.removeEventListener\("change", onFullChange\)/);
   });
 
+  it("lets each person switch the look of the box for themselves", () => {
+    assert.match(core, /\} else if \(type === "avokaido:look"\) \{\s+setLook\(event\.data\.look\);/);
+    assert.match(core, /if \(look !== "avo" && look !== "site"\) return;/);
+    assert.match(core, /localStorage\.setItem\(LOOK_KEY, look\)/);
+    assert.match(core, /var LOOK_KEY = "avokaido\.ideas\.look";/);
+    // Their choice first, then the team's, then the app's code.
+    assert.match(
+      core,
+      /if \(personalLook === "avo"\) return "avo";\s+if \(personalLook === "site"\) return code;\s+if \(teamLook === "avo"\) return "avo";\s+return codeChoice;/,
+    );
+    // The chat is told which look is on, and whether the site's exists.
+    assert.match(core, /look: avoOn \? "avo" : "site",\s+siteLook: siteLook,/);
+  });
+
   it("reads data-theme, and survives JSON that does not parse", () => {
     const tag = readFileSync(join(root, "src/script-tag.js"), "utf8");
     assert.match(tag, /theme: themeFrom\(script\)/);
