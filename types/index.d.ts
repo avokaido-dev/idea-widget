@@ -46,7 +46,8 @@ export interface IdeaWidgetOptions {
    *
    * Your app's own theme, given here, wins over what is read off the page,
    * value by value. `"avo"` switches the reading off and always uses Avo's
-   * look.
+   * look. A link set to "Avokaido's look" in the Avokaido console wins over
+   * both, and needs no change to your app.
    *
    * @example
    * createIdeaWidget({ key: "avk_…", theme: { primary: "#3451D1", radius: 10 } });

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.14.0
+
+**The team can choose Avokaido's look over the site's, from the console.**
+Until now, a widget that matched the site's colours could only be taken
+back to Avokaido's look in the app's own code (`data-theme="avo"`), which
+means a release of the app.
+
+- The audience check, which the widget already waits on before showing its
+  button, now answers the link's `look`. `"avo"` turns page-matching off
+  for that page view, before the button is first shown, so it is never seen
+  in the site's colours first. It wins over the page and over a `theme` /
+  `data-theme` given in code.
+- Anything else, or no `look` at all (an older backend, the 404 fallback),
+  changes nothing.
+
 ## 1.13.1
 
 **The launcher on a Flutter app takes its colours from the start, too.**
