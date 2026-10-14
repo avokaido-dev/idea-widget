@@ -2499,6 +2499,28 @@ export function createIdeaWidget(options) {
   }
 
   /**
+   * AND ONCE WHEN A FLUTTER APP HAS DRAWN ITS FIRST FRAME. Its screen is a
+   * canvas whose colours are read off its pixels (see `readCanvas`), and from
+   * a script tag the launcher is drawn while the app's engine is still
+   * loading: nothing is on the canvas at DOMContentLoaded, often nothing at
+   * load. Flutter says when there is, with `flutter-first-frame` on the
+   * window — said as the frame is handed over, so the read waits a moment
+   * for it to reach the canvas.
+   */
+  var firstFrameTimer = null;
+  var onFirstFrame = function () {
+    clearTimeout(firstFrameTimer);
+    firstFrameTimer = setTimeout(function () {
+      if (host) readTheme();
+    }, 250);
+  };
+  window.addEventListener("flutter-first-frame", onFirstFrame);
+  teardown.push(function () {
+    clearTimeout(firstFrameTimer);
+    window.removeEventListener("flutter-first-frame", onFirstFrame);
+  });
+
+  /**
    * Removes the widget from the page.
    *
    * Exists because a single-page app that unmounts the component holding this

@@ -39,8 +39,10 @@ export interface IdeaWidgetOptions {
    * Left out, the widget reads your page — the primary colour of your most
    * prominent button (or a `--brand`-style variable), your text and
    * background colours, fonts, text size and corner radius — and works the
-   * rest out with contrast checks. A page it cannot read (one drawn into a
-   * canvas, such as a Flutter web app) gets Avo's own look.
+   * rest out with contrast checks. A page drawn into a canvas, such as a
+   * Flutter web app, has its background, text and primary colours read off
+   * the app's screen instead, with Avo's fonts, size and corners. A page with
+   * nothing to read gets Avo's own look.
    *
    * Your app's own theme, given here, wins over what is read off the page,
    * value by value. `"avo"` switches the reading off and always uses Avo's
