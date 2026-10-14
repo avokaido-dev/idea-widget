@@ -256,6 +256,7 @@ function flutterPage({ pixels, refuse = false, canvases } = {}) {
   const doc = {
     defaultView: { innerWidth: 1440, innerHeight: 900 },
     documentElement: {},
+    querySelector: (sel) => (sel.includes("flt-glass-pane") ? pane : null),
     querySelectorAll: (sel) => (sel.includes("flt-glass-pane") ? [pane] : []),
     createElement: (tag) => {
       const el = {
@@ -272,7 +273,8 @@ function flutterPage({ pixels, refuse = false, canvases } = {}) {
       return el;
     },
   };
-  return { doc, drawn, made, appCanvas };
+  const root = { ownerDocument: doc, getAttribute: () => null };
+  return { doc, root, drawn, made, appCanvas };
 }
 
 describe("readCanvas", () => {
@@ -288,20 +290,56 @@ describe("readCanvas", () => {
     assert.equal(page.drawn[0][0], page.appCanvas);
   });
 
-  it("is not readable when the browser refuses to hand over the pixels", () => {
+  it("is not readable when the browser refuses to hand over the pixels, and does not wait", () => {
     const page = flutterPage({ refuse: true, pixels: (n) => screen(n, COURTSIDE) });
     assert.deepEqual(readCanvas(page.doc), { readable: false });
   });
 
-  it("is not readable before the app has drawn anything", () => {
+  it("waits while the app has drawn nothing", () => {
     const page = flutterPage({ pixels: (n) => screen(n, []) });
-    assert.deepEqual(readCanvas(page.doc), { readable: false });
+    assert.deepEqual(readCanvas(page.doc), { readable: false, waiting: true });
   });
 
-  it("is not readable with no canvas to read", () => {
+  it("waits while there is no canvas yet", () => {
     const page = flutterPage({ canvases: [], pixels: (n) => screen(n, COURTSIDE) });
-    assert.deepEqual(readCanvas(page.doc), { readable: false });
+    assert.deepEqual(readCanvas(page.doc), { readable: false, waiting: true });
     assert.equal(page.made.length, 0);
+  });
+});
+
+describe("matchTheme on a Flutter page", () => {
+  it("themes from the app's screen, and is not waiting", () => {
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, COURTSIDE) }).root, null);
+    assert.equal(m.matched, true);
+    assert.equal(m.from, "page");
+    assert.equal(m.waiting, false);
+    assert.equal(m.vars["--w-bg"], "#0F1511");
+    assert.equal(m.vars["--w-primary"], "#34735C");
+  });
+
+  it("is Avo default, waiting, before the app has drawn", () => {
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, []) }).root, null);
+    assert.equal(m.matched, false);
+    assert.equal(m.waiting, true);
+    assertVars(m.vars, avo.cssVars, "avo");
+  });
+
+  it("does not wait when the app's own theme already gives the primary", () => {
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, []) }).root, themeOption({ primary: "#3451D1" }));
+    assert.equal(m.from, "repo");
+    assert.equal(m.waiting, false);
+  });
+
+  it("does not wait when the canvas is refused, or the app has no colour", () => {
+    assert.equal(matchTheme(flutterPage({ refuse: true, pixels: (n) => screen(n, COURTSIDE) }).root, null).waiting, false);
+    const grey = COURTSIDE.filter(([hex]) => hex !== "#005236");
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, grey) }).root, null);
+    assert.equal(m.matched, false);
+    assert.equal(m.waiting, false);
+  });
+
+  it('never waits with theme "avo"', () => {
+    assert.equal(matchTheme(flutterPage({ pixels: (n) => screen(n, []) }).root, "avo").waiting, false);
   });
 });
 

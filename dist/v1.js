@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.13.0 — one script tag on your page.
+ * Avokaido idea widget 1.13.1 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -369,6 +369,12 @@ function appCanvases(doc, win) {
  *
  * A CANVAS WE MAY NOT READ IS NOT AN ERROR: one with a picture from another
  * site on it refuses `getImageData`, and that page simply gets Avo default.
+ *
+ * NOT DRAWN YET SAYS SO: `{ readable: false, waiting: true }` when there is
+ * no canvas yet, or nothing on it — an app still loading, or one in a tab
+ * nobody has looked at, which the browser does not draw. A later read can
+ * find what this one could not, so the widget reads again (`matchTheme`'s
+ * `waiting`). A refusal is final and does not wait.
  */
 function readCanvas(doc) {
   try {
@@ -376,7 +382,7 @@ function readCanvas(doc) {
     var vw = win.innerWidth || doc.documentElement.clientWidth || 0;
     var vh = win.innerHeight || doc.documentElement.clientHeight || 0;
     var canvases = appCanvases(doc, win);
-    if (!vw || !vh || !canvases.length) return { readable: false };
+    if (!vw || !vh || !canvases.length) return { readable: false, waiting: true };
     var k = Math.min(1, Math.sqrt(SAMPLE_PIXELS / (vw * vh)));
     var w = Math.max(1, Math.round(vw * k));
     var h = Math.max(1, Math.round(vh * k));
@@ -394,9 +400,9 @@ function readCanvas(doc) {
       var chh = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
       covered = Math.max(covered, cw * chh * k * k);
     }
-    if (!covered) return { readable: false };
+    if (!covered) return { readable: false, waiting: true };
     var found = paletteOf(ctx.getImageData(0, 0, w, h).data, covered);
-    if (!found) return { readable: false };
+    if (!found) return { readable: false, waiting: true };
     found.readable = true;
     return found;
   } catch (e) {
@@ -689,11 +695,13 @@ function toCssVars(t) {
 }
 
 /**
- * The theme for the widget right now: `{ vars, matched, from, src }`.
+ * The theme for the widget right now: `{ vars, matched, from, src, waiting }`.
  *
  * `from` says what themed it — `"repo"` when the primary came from the app's
  * code, `"page"` when it was read off the page, `"avo"` when nothing was
- * found and Avo default stands. `src` is `derive`'s, role by role.
+ * found and Avo default stands. `src` is `derive`'s, role by role. `waiting`
+ * is true when Avo default stands only because a canvas app has not drawn
+ * its screen yet (see `readCanvas`) — worth reading again soon.
  *
  * `repo` is the `theme` option as `themeOption` leaves it: read values from
  * the app's code, which win over the page; `"avo"`, which switches matching
@@ -706,8 +714,10 @@ function toCssVars(t) {
 function matchTheme(root, repo) {
   try {
     if (repo === "avo") return themeResult(derive({}), {});
-    var found = merge(readPage(root), repo && typeof repo === "object" ? repo : null);
-    return themeResult(derive(found), found);
+    var page = readPage(root);
+    var found = merge(page, repo && typeof repo === "object" ? repo : null);
+    var theme = derive(found);
+    return themeResult(theme, found, Boolean(page && page.waiting) && !theme.matched);
   } catch (err) {
     if (typeof console !== "undefined" && console.warn) {
       console.warn("[avokaido] could not read the page's theme; using Avo default", err);
@@ -716,12 +726,13 @@ function matchTheme(root, repo) {
   }
 }
 
-function themeResult(theme, found) {
+function themeResult(theme, found, waiting) {
   return {
     vars: toCssVars(theme),
     matched: theme.matched,
     from: theme.matched ? found.primary.from : "avo",
     src: theme.src,
+    waiting: Boolean(waiting),
   };
 }
 
@@ -1217,10 +1228,21 @@ function createIdeaWidget(options) {
    * READ AT MOUNT AND AGAIN ON EVERY OPEN, never once and kept. The launcher
    * needs colours when it is drawn, which on a single-page app can be before
    * its buttons or its web fonts exist; by the time somebody opens the box
-   * they do. `themeNow` is the last read, `{ vars, matched, from, src }`.
+   * they do. `themeNow` is the last read, `{ vars, matched, from, src,
+   * waiting }`.
+   *
+   * AND AGAIN, SOON, WHILE A CANVAS APP HAS NOT DRAWN YET (`waiting`): after
+   * half a second, then one, two, four and eight — never more than those five
+   * — and, in a tab nobody is looking at, which the browser does not draw,
+   * once it is looked at. Otherwise the launcher on a Flutter app wears Avo's
+   * green until somebody first opens the box.
    */
   var themeChoice = themeOption(opts.theme);
   var themeNow = null;
+  var THEME_RETRIES = [500, 1000, 2000, 4000, 8000];
+  var themeRetries = 0;
+  var themeRetryTimer = null;
+  var themeOnVisible = null;
 
   /**
    * The two origins the chat loads from, connected to before it is asked
@@ -1553,6 +1575,7 @@ function createIdeaWidget(options) {
    */
   function readTheme() {
     themeNow = matchTheme(document.body, themeChoice);
+    if (themeNow.waiting) retryTheme();
     try {
       if (host) {
         var vars = themeNow.vars;
@@ -1567,6 +1590,30 @@ function createIdeaWidget(options) {
       /* The stylesheet's fallbacks are Avo default: unthemed, never broken. */
     }
     return themeNow;
+  }
+
+  /**
+   * The next read of a canvas app that has not drawn yet — see `themeNow`.
+   * One at a time: a read that is still waiting books the one after it.
+   */
+  function retryTheme() {
+    if (destroyed || themeRetryTimer || themeOnVisible) return;
+    if (themeRetries >= THEME_RETRIES.length) return;
+    if (document.hidden) {
+      themeOnVisible = function () {
+        if (document.hidden) return;
+        document.removeEventListener("visibilitychange", themeOnVisible);
+        themeOnVisible = null;
+        retryTheme();
+      };
+      document.addEventListener("visibilitychange", themeOnVisible);
+      return;
+    }
+    themeRetryTimer = setTimeout(function () {
+      themeRetryTimer = null;
+      themeRetries++;
+      if (host && !destroyed) readTheme();
+    }, THEME_RETRIES[themeRetries]);
   }
 
   /**
@@ -3350,6 +3397,8 @@ function createIdeaWidget(options) {
   teardown.push(function () {
     clearTimeout(firstFrameTimer);
     window.removeEventListener("flutter-first-frame", onFirstFrame);
+    clearTimeout(themeRetryTimer);
+    if (themeOnVisible) document.removeEventListener("visibilitychange", themeOnVisible);
   });
 
   /**
