@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.12.0 — one script tag on your page.
+ * Avokaido idea widget 1.13.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -183,19 +183,19 @@ function chromaOf(c) {
 }
 
 /**
- * Whether a page can be read at all, from what `pageFacts` found on it.
+ * Whether a page's elements can be read, from what `pageFacts` found on it.
  *
  * EXPORTED FOR ITS TESTS: the decision is the half that can be checked
  * without a DOM, so it is out here, apart from the measuring.
  *
- * A CANVAS HAS NO COLOURS TO READ. A Flutter web app — and anything else that
- * draws itself into a canvas — leaves the page with one element and nothing
- * on it: no buttons, no panels, a body font nobody sees. Reading it would
- * "find" the browser's defaults and match the box to those, which is worse
- * than Avo default. So the page says so with `data-render="canvas"`, or it is
- * a Flutter app (`flutter-view` or `flt-glass-pane` on it), or a canvas
- * covers at least 60% of the window, and then only the app's code (the
- * `theme` option) can theme it.
+ * A CANVAS HAS NO ELEMENTS TO READ. A Flutter web app — and anything else
+ * that draws itself into a canvas — leaves the page with one element and
+ * nothing on it: no buttons, no panels, a body font nobody sees. Reading it
+ * would "find" the browser's defaults and match the box to those, which is
+ * worse than Avo default. So the page says so with `data-render="canvas"`, or
+ * it is a Flutter app (`flutter-view` or `flt-glass-pane` on it), or a canvas
+ * covers at least 60% of the window — and then its pixels are read instead
+ * (`readCanvas`), and the app's code (the `theme` option) still wins.
  */
 function pageReadable(facts) {
   if (!facts) return false;
@@ -233,9 +233,182 @@ function pageFacts(root) {
 }
 
 /**
+ * HOW MANY PIXELS A CANVAS READ LOOKS AT. The app's screen is drawn small
+ * into a canvas of our own — about 438 × 274 for a 1440 × 900 window — and
+ * every pixel of that is counted: enough for a line of text to leave its
+ * colour behind, small enough to count in a few milliseconds on an open.
+ */
+var SAMPLE_PIXELS = 120000;
+
+/**
+ * What an app drawn in a canvas shows, from its pixels: `{ primary, text,
+ * background }`, each `{ v, src }` and each only when found — or null when
+ * the canvas has not been drawn yet.
+ *
+ * EXPORTED FOR ITS TESTS: pixels in, colours out, no DOM — `readCanvas` does
+ * the drawing and hands the bytes here.
+ *
+ * EXACT COLOURS, COUNTED. An app's flat colours — its background, its
+ * panels, its buttons — come out of the drawing as the very same value
+ * hundreds of times; the edges between them and the photos on them come out
+ * as a scatter of values a few times each. So nothing is rounded or grouped:
+ * a colour is counted only where it is exactly itself, and the scatter falls
+ * under every threshold below.
+ *
+ * THE READ-OFF-THE-PAGE RULES, ON PIXELS. The background is the most-drawn
+ * neutral colour covering at least 15% — the "largest neutral panel" of
+ * `readPage`. The primary is the strongest colour, colour strength times the
+ * square root of its area, as for a button, with the same 0.06 floor, so a
+ * grey or a sage that is nearly grey is never a brand. The text is the
+ * most-drawn colour under that floor that holds 4.5:1 on that background —
+ * under it, because a filled button outdraws the words on a screen, and a
+ * colour strong enough to be a brand is not what an app writes in. Fonts,
+ * size and corners are not in the pixels, so they stay Avo's.
+ *
+ * NOT YET DRAWN IS NOT A THEME: under half of what the canvases cover
+ * opaque — an app still loading, a WebGL canvas that hands back an empty
+ * picture — gives null, and Avo default stands until the next read.
+ */
+function paletteOf(data, covered) {
+  if (!data || !data.length) return null;
+  var counts = new Map();
+  var n = 0;
+  for (var i = 0; i + 3 < data.length; i += 4) {
+    if (data[i + 3] < 250) continue;
+    n++;
+    var key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  if (n < 1000 || n < (covered || data.length / 4) * 0.5) return null;
+  var cols = [];
+  counts.forEach(function (count, key) {
+    cols.push({ r: (key >> 16) & 255, g: (key >> 8) & 255, b: key & 255, n: count });
+  });
+  cols.sort(function (a, b) { return b.n - a.n; });
+  var out = {};
+  var bg = null;
+  var j;
+  for (j = 0; j < cols.length && cols[j].n >= n * 0.15; j++) {
+    if (chromaOf(cols[j]) <= 0.04) {
+      bg = cols[j];
+      out.background = {
+        v: hexOf(bg),
+        src: "the app's screen, " + Math.round((bg.n / n) * 100) + "% of it",
+      };
+      break;
+    }
+  }
+  var best = null;
+  var minBrand = Math.max(4, n * 0.0003);
+  for (j = 0; j < cols.length && cols[j].n >= minBrand; j++) {
+    var ch = chromaOf(cols[j]);
+    if (ch < 0.06) continue;
+    var score = ch * Math.sqrt(cols[j].n);
+    if (!best || score > best.score) best = { score: score, c: cols[j] };
+  }
+  if (best) out.primary = { v: hexOf(best.c), src: "the app's strongest colour, on its screen" };
+  var under = bg || cols[0];
+  var minText = Math.max(3, n * 0.0002);
+  for (j = 0; j < cols.length && cols[j].n >= minText; j++) {
+    if (chromaOf(cols[j]) < 0.06 && contrastOf(cols[j], under) >= 4.5) {
+      out.text = { v: hexOf(cols[j]), src: "the app's text, on its screen" };
+      break;
+    }
+  }
+  return out;
+}
+
+/**
+ * The canvases an app draws its screen into, in the order they are stacked.
+ *
+ * A FLUTTER APP'S OWN, NOT ANY ON THE PAGE: its canvases sit in
+ * `flt-glass-pane`'s shadow root, and a canvas outside it — confetti thrown
+ * over the app for a second, somebody's chart library — is not the app's
+ * look. Anything else drawn into a canvas gives its largest one.
+ */
+function appCanvases(doc, win) {
+  var found = [];
+  var hosts = doc.querySelectorAll("flutter-view, flt-glass-pane");
+  for (var i = 0; i < hosts.length; i++) {
+    [hosts[i], hosts[i].shadowRoot].forEach(function (scope) {
+      if (!scope) return;
+      var list = scope.querySelectorAll("canvas");
+      for (var k = 0; k < list.length && found.length < 16; k++) {
+        if (found.indexOf(list[k]) < 0) found.push(list[k]);
+      }
+    });
+  }
+  if (found.length) return found;
+  var vw = win.innerWidth || 0;
+  var vh = win.innerHeight || 0;
+  var biggest = null;
+  var all = doc.querySelectorAll("canvas");
+  for (var j = 0; j < all.length && j < MAX_SCAN; j++) {
+    var r = all[j].getBoundingClientRect();
+    var area =
+      Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0)) *
+      Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+    if (area && (!biggest || area > biggest.area)) biggest = { area: area, el: all[j] };
+  }
+  return biggest ? [biggest.el] : [];
+}
+
+/**
+ * What an app drawn in a canvas shows — `readPage`'s answer for a page whose
+ * elements cannot be read: `{ readable: true, primary, text, background }`
+ * as found, or `{ readable: false }` when nothing could be.
+ *
+ * THE APP'S SCREEN, DRAWN SMALL INTO A CANVAS OF OUR OWN — made here, never
+ * put on the page, and gone when this returns — and handed to `paletteOf` as
+ * bytes. Only the canvases are drawn, so the widget's own launcher and box,
+ * which are elements, are never in what is read.
+ *
+ * WHAT IS ON THE SCREEN STAYS HERE. Three colours come out; the pixels —
+ * which are somebody's bookings, somebody's name — are counted and dropped,
+ * never kept, posted or put in a URL.
+ *
+ * A CANVAS WE MAY NOT READ IS NOT AN ERROR: one with a picture from another
+ * site on it refuses `getImageData`, and that page simply gets Avo default.
+ */
+function readCanvas(doc) {
+  try {
+    var win = doc.defaultView || window;
+    var vw = win.innerWidth || doc.documentElement.clientWidth || 0;
+    var vh = win.innerHeight || doc.documentElement.clientHeight || 0;
+    var canvases = appCanvases(doc, win);
+    if (!vw || !vh || !canvases.length) return { readable: false };
+    var k = Math.min(1, Math.sqrt(SAMPLE_PIXELS / (vw * vh)));
+    var w = Math.max(1, Math.round(vw * k));
+    var h = Math.max(1, Math.round(vh * k));
+    var sample = doc.createElement("canvas");
+    sample.width = w;
+    sample.height = h;
+    var ctx = sample.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return { readable: false };
+    var covered = 0;
+    for (var i = 0; i < canvases.length; i++) {
+      var r = canvases[i].getBoundingClientRect();
+      if (!r.width || !r.height || !canvases[i].width || !canvases[i].height) continue;
+      ctx.drawImage(canvases[i], r.left * k, r.top * k, r.width * k, r.height * k);
+      var cw = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
+      var chh = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+      covered = Math.max(covered, cw * chh * k * k);
+    }
+    if (!covered) return { readable: false };
+    var found = paletteOf(ctx.getImageData(0, 0, w, h).data, covered);
+    if (!found) return { readable: false };
+    found.readable = true;
+    return found;
+  } catch (e) {
+    return { readable: false };
+  }
+}
+
+/**
  * What the page shows: the seven values, each `{ v, src }`, where `src` says
- * where on the page it came from. `{ readable: false }` for a page drawn in a
- * canvas (see `pageReadable`); null for no root.
+ * where on the page it came from. For a page drawn in a canvas (see
+ * `pageReadable`) the colours read off its pixels, or `{ readable: false }`
+ * — see `readCanvas`; null for no root.
  *
  * The reference's rules, in its order: a page variable for the primary if it
  * is a real colour; then the most prominent coloured button — colour strength
@@ -246,8 +419,8 @@ function pageFacts(root) {
  */
 function readPage(root) {
   if (!root) return null;
-  if (!pageReadable(pageFacts(root))) return { readable: false };
   var doc = root.ownerDocument || document;
+  if (!pageReadable(pageFacts(root))) return readCanvas(doc);
   var win = doc.defaultView || window;
   var styleOf = function (el) { return win.getComputedStyle(el); };
   var cs = styleOf(root);
@@ -3156,6 +3329,28 @@ function createIdeaWidget(options) {
       window.removeEventListener("load", onLoad);
     });
   }
+
+  /**
+   * AND ONCE WHEN A FLUTTER APP HAS DRAWN ITS FIRST FRAME. Its screen is a
+   * canvas whose colours are read off its pixels (see `readCanvas`), and from
+   * a script tag the launcher is drawn while the app's engine is still
+   * loading: nothing is on the canvas at DOMContentLoaded, often nothing at
+   * load. Flutter says when there is, with `flutter-first-frame` on the
+   * window — said as the frame is handed over, so the read waits a moment
+   * for it to reach the canvas.
+   */
+  var firstFrameTimer = null;
+  var onFirstFrame = function () {
+    clearTimeout(firstFrameTimer);
+    firstFrameTimer = setTimeout(function () {
+      if (host) readTheme();
+    }, 250);
+  };
+  window.addEventListener("flutter-first-frame", onFirstFrame);
+  teardown.push(function () {
+    clearTimeout(firstFrameTimer);
+    window.removeEventListener("flutter-first-frame", onFirstFrame);
+  });
 
   /**
    * Removes the widget from the page.

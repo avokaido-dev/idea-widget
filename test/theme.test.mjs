@@ -7,7 +7,9 @@
 // A difference is a bug in the port, never in the fixture.
 //
 // No DOM, deliberately, as in dist.test.mjs: `readPage` is the only part that
-// needs one, and the decisions around it (`pageReadable`) are tested alone.
+// needs one, and the decisions around it (`pageReadable`) are tested alone. A
+// canvas app's screen is tested as the bytes `getImageData` would give
+// (`paletteOf`), and `readCanvas` against a stand-in document.
 
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
@@ -21,6 +23,8 @@ import {
   matchTheme,
   merge,
   pageReadable,
+  paletteOf,
+  readCanvas,
   themeOption,
   toCssVars,
 } from "../src/theme.js";
@@ -105,7 +109,7 @@ describe("merge", () => {
   });
 });
 
-describe("what cannot be read", () => {
+describe("pages whose elements cannot be read", () => {
   it("reads an ordinary page", () => {
     assert.equal(pageReadable({ render: null, flutter: false, canvasShare: 0 }), true);
     assert.equal(pageReadable({ render: "dom", flutter: false, canvasShare: 0.59 }), true);
@@ -127,6 +131,177 @@ describe("what cannot be read", () => {
 
   it("does not read what it could not measure", () => {
     assert.equal(pageReadable(null), false);
+  });
+});
+
+// A screen as `getImageData` gives it: RGBA bytes, painted in order with
+// `[colour, pixels]` — a pixel count, a share of the screen when under 1, or
+// "rest" for what is left — and transparent wherever nothing was painted.
+function screen(total, paints) {
+  const data = new Uint8ClampedArray(total * 4);
+  let at = 0;
+  for (const [hex, count] of paints) {
+    const n = count === "rest" ? total - at : count < 1 ? Math.round(total * count) : count;
+    const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    for (let i = 0; i < n && at < total; i++, at++) {
+      data.set([...rgb, 255], at * 4);
+    }
+  }
+  return data;
+}
+
+// Courtside's booking week, Hornstull Padel — a Flutter app on Material 3
+// dark — as counted off the live app at 1440 × 900 on 2026-10-14: the
+// background, the hour rows, the bookings and today's chip in sage, the
+// avatar's green, and the text.
+const COURTSIDE = [
+  ["#0F1511", 0.69],
+  ["#262B28", 0.18],
+  ["#364B3F", 0.05],
+  ["#232A25", 0.024],
+  ["#303632", 0.023],
+  ["#161D19", 0.018],
+  ["#005236", 59],
+  ["#C0C9C1", 40],
+  ["#DDE3DD", 30],
+  ["#1B211D", "rest"],
+];
+
+describe("a canvas app's screen", () => {
+  it("reads Courtside's background, text and green", () => {
+    const found = paletteOf(screen(120000, COURTSIDE));
+    assert.equal(found.background.v, "#0F1511");
+    assert.equal(found.background.src, "the app's screen, 69% of it");
+    assert.equal(found.text.v, "#C0C9C1");
+    assert.equal(found.primary.v, "#005236");
+  });
+
+  it("themes Courtside dark, with its green deepened to show on its background", () => {
+    const t = derive(merge({ readable: true, ...paletteOf(screen(120000, COURTSIDE)) }, null));
+    assert.equal(t.matched, true);
+    assert.equal(t.dark, true);
+    assert.equal(t.bg, "#0F1511");
+    assert.equal(t.text, "#C0C9C1");
+    assert.equal(t.primary, "#34735C");
+    assert.equal(t.onPrimary, "#FFFFFF");
+    assert.equal(t.src.primary.tag, "page");
+    // Not in the pixels, so Avo's.
+    assert.equal(t.fontBody, "'Instrument Sans', Inter, sans-serif");
+    assert.equal(t.radius, 12);
+  });
+
+  it("takes no grey, and no sage that is nearly grey, for a brand", () => {
+    const found = paletteOf(screen(120000, COURTSIDE.filter(([hex]) => hex !== "#005236")));
+    assert.equal(found.primary, undefined);
+    assert.equal(derive(merge({ readable: true, ...found }, null)).matched, false);
+  });
+
+  it("does not take the scatter at the edges of shapes for a brand", () => {
+    // Strong colours, each drawn only a few times: what anti-aliasing and
+    // photos leave, never a flat colour of the app's own.
+    const scatter = [];
+    for (let i = 0; i < 300; i++) {
+      scatter.push(["#" + (0xd0103c + i * 0x010307).toString(16).slice(-6), 3]);
+    }
+    const found = paletteOf(screen(120000, [["#FFFFFF", 0.9], ...scatter, ["#1B2033", 0.09]]));
+    assert.equal(found.primary, undefined);
+    assert.equal(found.background.v, "#FFFFFF");
+    assert.equal(found.text.v, "#1B2033");
+  });
+
+  it("reads a light app's button colour, and its dark text", () => {
+    const found = paletteOf(
+      screen(120000, [["#FFFFFF", 0.8], ["#F1F3F8", 0.15], ["#3451D1", 0.03], ["#1B2033", 0.02]]),
+    );
+    assert.deepEqual(
+      [found.background.v, found.primary.v, found.text.v],
+      ["#FFFFFF", "#3451D1", "#1B2033"],
+    );
+  });
+
+  it("does not take a screen-filling brand colour for the background", () => {
+    const found = paletteOf(screen(120000, [["#3451D1", 0.9], ["#FFFFFF", 0.1]]));
+    assert.equal(found.background, undefined);
+    assert.equal(found.primary.v, "#3451D1");
+  });
+
+  it("gives nothing for a canvas that has not been drawn yet", () => {
+    assert.equal(paletteOf(screen(120000, [["#0F1511", 0.4]])), null);
+    assert.equal(paletteOf(screen(800, [["#0F1511", 1]])), null);
+    assert.equal(paletteOf(new Uint8ClampedArray(0)), null);
+    assert.equal(paletteOf(null), null);
+  });
+
+  it("counts only what the app's canvases cover as the screen", () => {
+    // Half the sample is the app, all of it drawn; the rest was never its.
+    assert.notEqual(paletteOf(screen(120000, [["#0F1511", 0.5]]), 60000), null);
+  });
+});
+
+// A page drawn by Flutter, as far as `readCanvas` looks at one: a glass pane
+// whose shadow root holds the app's canvas, a window of 1440 × 900, and a
+// canvas of our own whose picture is `pixels`.
+function flutterPage({ pixels, refuse = false, canvases } = {}) {
+  const appCanvas = {
+    width: 2880,
+    height: 1800,
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: 1440, bottom: 900, width: 1440, height: 900 }),
+  };
+  const drawn = [];
+  const made = [];
+  const pane = {
+    querySelectorAll: () => [],
+    shadowRoot: { querySelectorAll: () => canvases || [appCanvas] },
+  };
+  const doc = {
+    defaultView: { innerWidth: 1440, innerHeight: 900 },
+    documentElement: {},
+    querySelectorAll: (sel) => (sel.includes("flt-glass-pane") ? [pane] : []),
+    createElement: (tag) => {
+      const el = {
+        tag,
+        getContext: () => ({
+          drawImage: (...args) => drawn.push(args),
+          getImageData: (x, y, w, h) => {
+            if (refuse) throw new Error("SecurityError: the canvas has been tainted");
+            return { data: pixels(w * h) };
+          },
+        }),
+      };
+      made.push(el);
+      return el;
+    },
+  };
+  return { doc, drawn, made, appCanvas };
+}
+
+describe("readCanvas", () => {
+  it("draws the app's canvas small into one of its own, and reads it", () => {
+    const page = flutterPage({ pixels: (n) => screen(n, COURTSIDE) });
+    const found = readCanvas(page.doc);
+    assert.equal(found.readable, true);
+    assert.equal(found.primary.v, "#005236");
+    assert.equal(page.made.length, 1);
+    assert.equal(page.made[0].tag, "canvas");
+    assert.deepEqual([page.made[0].width, page.made[0].height], [438, 274]);
+    assert.equal(page.drawn.length, 1);
+    assert.equal(page.drawn[0][0], page.appCanvas);
+  });
+
+  it("is not readable when the browser refuses to hand over the pixels", () => {
+    const page = flutterPage({ refuse: true, pixels: (n) => screen(n, COURTSIDE) });
+    assert.deepEqual(readCanvas(page.doc), { readable: false });
+  });
+
+  it("is not readable before the app has drawn anything", () => {
+    const page = flutterPage({ pixels: (n) => screen(n, []) });
+    assert.deepEqual(readCanvas(page.doc), { readable: false });
+  });
+
+  it("is not readable with no canvas to read", () => {
+    const page = flutterPage({ canvases: [], pixels: (n) => screen(n, COURTSIDE) });
+    assert.deepEqual(readCanvas(page.doc), { readable: false });
+    assert.equal(page.made.length, 0);
   });
 });
 

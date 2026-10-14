@@ -350,9 +350,16 @@ colour nothing is matched**, and the widget uses
 a match looks worse than none.
 
 **Apps drawn into a canvas** — Flutter web, or anything with a canvas over
-most of the window — have nothing on the page to read, so they get Avokaido's
-look unless you say what yours is. Mark such a page with `data-render="canvas"`
-on `<body>` if the widget does not spot it. Then give it your theme:
+most of the window — have no elements to read, so the widget reads the app's
+screen instead. It draws the app's canvas small into one of its own, which
+never goes on your page, and counts the colours. The most-drawn neutral
+colour is the background, the strongest colour is the primary, and the
+most-drawn colour that reads on the background is the text. Fonts, size and
+corners are not in the pixels, so those stay Avokaido's. This read happens on
+load, when Flutter draws its first frame, and on every open. Only those three
+colours leave the read; the pixels are dropped. Mark a page with
+`data-render="canvas"` on `<body>` if the widget does not spot it. To set
+exactly what is used, give your theme:
 
 ```html
 <script src="https://app-avokaido-eu.web.app/widget/v1.js"

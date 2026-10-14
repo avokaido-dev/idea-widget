@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.13.0
+
+**A Flutter app gets its own colours too.** An app drawn into a canvas —
+Flutter web, `data-render="canvas"`, or a canvas over 60% of the window — has
+no elements to read, so until now it always got Avo default. Now the widget
+reads the app's screen itself.
+
+- **Read off the pixels.** The app's canvases (for Flutter, only the ones in
+  its glass pane) are drawn small, about 120,000 pixels, into a canvas of the
+  widget's own that never goes on the page. Exact colours are counted there.
+  The **background** is the most-drawn neutral colour covering 15% or more.
+  The **primary** is the strongest colour by strength × √area, with the same
+  0.06 floor as a button. The **text** is the most-drawn colour under that
+  floor that holds 4.5:1 on the background. Fonts, size and corners are not
+  in the pixels, so they stay Avo's. The rest is worked out as before, so
+  Courtside's dark booking week gives a #0F1511 box, #C0C9C1 text and a
+  #34735C button, where it used to be Avo's cream.
+- **Read on load, on Flutter's first frame (`flutter-first-frame`), and on
+  every open**, in a few milliseconds. A canvas that has not been drawn yet,
+  or that the browser will not hand over (a picture from another site on it),
+  gives Avo default until the next read. Only three colours come out of the
+  read; the pixels are counted and dropped, and never sent anywhere.
+- The app's own `theme` / `data-theme` still wins, value by value.
+
 ## 1.12.0
 
 **It looks like your site, opens under your menu, and the chat draws its own
