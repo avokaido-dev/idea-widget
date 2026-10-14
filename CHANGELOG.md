@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.13.1
+
+**The launcher on a Flutter app takes its colours from the start, too.**
+1.13.0 read the app's screen when the widget mounted and when the launcher
+was first shown. If Flutter had not drawn yet by then, the launcher kept
+Avo's green until somebody opened the box. That happens in a tab opened in
+the background, which the browser does not draw, or on a slow load.
+
+- `matchTheme` now says `waiting: true` when Avo default stands only
+  because a canvas app has not drawn yet (`readCanvas` gives
+  `{ readable: false, waiting: true }`). A canvas the browser refuses does
+  not wait.
+- The widget then reads again after 0.5, 1, 2, 4 and 8 seconds, and no more.
+  In a hidden tab it waits until the tab is looked at, instead of using up
+  those tries.
+
 ## 1.13.0
 
 **A Flutter app gets its own colours too.** An app drawn into a canvas —

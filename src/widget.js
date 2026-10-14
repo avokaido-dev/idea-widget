@@ -385,10 +385,21 @@ export function createIdeaWidget(options) {
    * READ AT MOUNT AND AGAIN ON EVERY OPEN, never once and kept. The launcher
    * needs colours when it is drawn, which on a single-page app can be before
    * its buttons or its web fonts exist; by the time somebody opens the box
-   * they do. `themeNow` is the last read, `{ vars, matched, from, src }`.
+   * they do. `themeNow` is the last read, `{ vars, matched, from, src,
+   * waiting }`.
+   *
+   * AND AGAIN, SOON, WHILE A CANVAS APP HAS NOT DRAWN YET (`waiting`): after
+   * half a second, then one, two, four and eight — never more than those five
+   * — and, in a tab nobody is looking at, which the browser does not draw,
+   * once it is looked at. Otherwise the launcher on a Flutter app wears Avo's
+   * green until somebody first opens the box.
    */
   var themeChoice = themeOption(opts.theme);
   var themeNow = null;
+  var THEME_RETRIES = [500, 1000, 2000, 4000, 8000];
+  var themeRetries = 0;
+  var themeRetryTimer = null;
+  var themeOnVisible = null;
 
   /**
    * The two origins the chat loads from, connected to before it is asked
@@ -721,6 +732,7 @@ export function createIdeaWidget(options) {
    */
   function readTheme() {
     themeNow = matchTheme(document.body, themeChoice);
+    if (themeNow.waiting) retryTheme();
     try {
       if (host) {
         var vars = themeNow.vars;
@@ -735,6 +747,30 @@ export function createIdeaWidget(options) {
       /* The stylesheet's fallbacks are Avo default: unthemed, never broken. */
     }
     return themeNow;
+  }
+
+  /**
+   * The next read of a canvas app that has not drawn yet — see `themeNow`.
+   * One at a time: a read that is still waiting books the one after it.
+   */
+  function retryTheme() {
+    if (destroyed || themeRetryTimer || themeOnVisible) return;
+    if (themeRetries >= THEME_RETRIES.length) return;
+    if (document.hidden) {
+      themeOnVisible = function () {
+        if (document.hidden) return;
+        document.removeEventListener("visibilitychange", themeOnVisible);
+        themeOnVisible = null;
+        retryTheme();
+      };
+      document.addEventListener("visibilitychange", themeOnVisible);
+      return;
+    }
+    themeRetryTimer = setTimeout(function () {
+      themeRetryTimer = null;
+      themeRetries++;
+      if (host && !destroyed) readTheme();
+    }, THEME_RETRIES[themeRetries]);
   }
 
   /**
@@ -2518,6 +2554,8 @@ export function createIdeaWidget(options) {
   teardown.push(function () {
     clearTimeout(firstFrameTimer);
     window.removeEventListener("flutter-first-frame", onFirstFrame);
+    clearTimeout(themeRetryTimer);
+    if (themeOnVisible) document.removeEventListener("visibilitychange", themeOnVisible);
   });
 
   /**
