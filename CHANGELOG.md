@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.18.0
+
+**The box wears the dark side of the brand sheet on a dark page.** The
+design system in Avokaido now holds a brand sheet with light and dark
+colours, and the audience check's `theme` can carry `dark: { primary,
+background, text }`.
+
+- The page decides which side: its read background (off the elements, or a
+  canvas app's pixels), else the browser's dark-mode preference before the
+  page has drawn — what a Flutter app on `ThemeMode.system` follows.
+- A sheet with only light colours on a dark page keeps its primary and
+  leaves the background and text to the page, rather than putting a light
+  box on a dark site.
+- The app's own `theme` / `data-theme` still wins, value by value, over
+  either side.
+
 ## 1.17.1
 
 **Moving the box by its header follows the pointer smoothly.** The chat

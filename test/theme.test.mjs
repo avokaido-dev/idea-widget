@@ -616,3 +616,54 @@ describe("the team's design system, from the audience check", () => {
   });
 });
 
+describe("a design system with a dark side", () => {
+  const SHEET = {
+    primary: "#226A4C",
+    background: "#F5FBF5",
+    text: "#171D19",
+    fontBody: "Roboto",
+    app: "pak-sod-git/courtside",
+    dark: { primary: "#8ED5B0", background: "#0F1511", text: "#DEE4DE" },
+  };
+
+  it("keeps the dark side apart, cleaned like the rest", () => {
+    const t = systemTheme(SHEET);
+    assert.equal(t.primary.v, "#226A4C");
+    assert.equal(t.dark.primary.v, "#8ED5B0");
+    assert.match(t.dark.primary.src, /for dark screens/);
+    assert.equal(systemTheme({ dark: { primary: "red;}" } }), null);
+    assert.equal(systemTheme({ dark: { primary: "#8ED5B0" } }).dark.primary.v, "#8ED5B0");
+  });
+
+  it("wears the dark side on a dark page", () => {
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, COURTSIDE) }).root, systemTheme(SHEET), null);
+    assert.equal(m.vars["--w-bg"], "#0F1511");
+    assert.equal(m.vars["--w-text"], "#DEE4DE");
+    assert.equal(m.src.primary.text, "pak-sod-git/courtside's design system, in Avokaido, for dark screens");
+  });
+
+  it("wears the light side on a light page", () => {
+    const light = [["#FFFFFF", 0.9], ["#1B2033", 0.09], ["#E5E7EB", "rest"]];
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, light) }).root, systemTheme(SHEET), null);
+    assert.equal(m.vars["--w-bg"], "#F5FBF5");
+    assert.equal(m.src.primary.text, "pak-sod-git/courtside's design system, in Avokaido");
+  });
+
+  it("leaves a dark page its own background when the sheet has only light ones", () => {
+    const lightOnly = { primary: "#226A4C", background: "#F5FBF5", text: "#171D19" };
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, COURTSIDE) }).root, systemTheme(lightOnly), null);
+    assert.equal(m.vars["--w-bg"], "#0F1511");
+    assert.match(m.src.primary.text, /^all apps' design system, in Avokaido/);
+    assert.equal(m.src.background.tag, "page");
+  });
+
+  it("lets the app's code win over either side", () => {
+    const merged = withSystem(themeOption({ primary: "#3451D1" }), systemTheme(SHEET));
+    assert.equal(merged.dark.primary, undefined);
+    assert.equal(merged.dark.background.v, "#0F1511");
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, COURTSIDE) }).root, merged, null);
+    assert.match(m.src.primary.text, /^the app's theme/);
+    assert.equal(m.vars["--w-bg"], "#0F1511");
+  });
+});
+

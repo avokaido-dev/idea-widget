@@ -343,7 +343,8 @@ primary, background and text colours, its fonts and its corners from there:
 the tokens named like `--primary`, `--background`, `--text`, `--font-body` and
 `--radius` (the same names Avo Monitor's scan and Cloud Runner builds go by).
 It arrives with the check the widget makes before showing its button, so the
-launcher is drawn in it from the start. What the design system leaves out is
+launcher is drawn in it from the start. When the sheet has colours for dark screens too,
+the box wears them on a dark page, and the light ones on a light page. What the design system leaves out is
 read off the page, as below.
 
 What it reads, in this order:

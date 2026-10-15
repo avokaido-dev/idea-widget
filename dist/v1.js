@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.17.1 — one script tag on your page.
+ * Avokaido idea widget 1.18.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -734,7 +734,7 @@ function matchTheme(root, repo, remembered) {
   try {
     if (repo === "avo") return themeResult(derive({}), {});
     var page = readPage(root);
-    var found = merge(page, repo && typeof repo === "object" ? repo : null);
+    var found = merge(page, repo && typeof repo === "object" ? sideOf(repo, page) : null);
     var waiting = Boolean(page && page.waiting);
     var kept = fillFromBrand(found, page, brandOf(remembered), waiting);
     var theme = derive(found);
@@ -914,7 +914,63 @@ function systemTheme(value) {
     var v = value[k];
     if (v != null && typeof v !== "object") boxed[k] = { v: v, src: src };
   });
-  return themeOption(boxed);
+  var out = themeOption(boxed);
+  // ITS DARK SIDE, when the brand sheet has one: the primary, background
+  // and text for dark screens, worn when the page is dark (`sideOf`).
+  var dark = value.dark;
+  if (dark && typeof dark === "object" && !Array.isArray(dark)) {
+    var darkBoxed = {};
+    ["primary", "background", "text"].forEach(function (k) {
+      if (typeof dark[k] === "string") darkBoxed[k] = { v: dark[k], src: src + ", for dark screens" };
+    });
+    var darkOut = themeOption(darkBoxed);
+    if (darkOut) {
+      out = out || {};
+      out.dark = darkOut;
+    }
+  }
+  return out;
+}
+
+/** Whether the browser asks for dark screens. Never throws. */
+function prefersDark() {
+  try {
+    return Boolean(
+      typeof window !== "undefined" &&
+        window.matchMedia &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches,
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * The side of a design system this page wears: its dark values on a dark
+ * page, its light ones on a light page.
+ *
+ * THE PAGE SAYS WHICH. A read background — off the elements, or a canvas
+ * app's pixels — decides; before there is one, the browser's own dark-mode
+ * preference does, which is what a Flutter app on `ThemeMode.system`
+ * follows. And a background (with its text) for the other kind of screen is
+ * not this page's: a sheet with only light colours on a page that is dark
+ * keeps its primary and leaves the background and text to the page.
+ */
+function sideOf(repo, page) {
+  if (!repo || typeof repo !== "object") return repo;
+  var read = page && page.readable && page.background ? page.background.v : null;
+  var dark = read ? luminance(read) < 0.3 : prefersDark();
+  var side = dark ? repo.dark || {} : {};
+  var out = {};
+  THEME_KEYS.forEach(function (k) {
+    var v = side[k] || repo[k];
+    if (v) out[k] = v;
+  });
+  if (read && out.background && luminance(out.background.v) < 0.3 !== dark) {
+    delete out.background;
+    delete out.text;
+  }
+  return out;
 }
 
 /**
@@ -930,6 +986,18 @@ function withSystem(code, system) {
     if (code[k]) out[k] = code[k];
     else if (system[k]) out[k] = system[k];
   });
+  // The dark side only for what the code left to the design system.
+  if (system.dark) {
+    var dark = {};
+    var any = false;
+    THEME_KEYS.forEach(function (k) {
+      if (!code[k] && system.dark[k]) {
+        dark[k] = system.dark[k];
+        any = true;
+      }
+    });
+    if (any) out.dark = dark;
+  }
   return out;
 }
 
