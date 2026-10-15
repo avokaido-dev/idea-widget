@@ -1374,6 +1374,10 @@ export function createIdeaWidget(options) {
          drag is coming from inside it, measured there, and taking them away
          would end it on the first move. Nothing eases behind the pointer. */
       ".dock.moving { transition: none !important }",
+      /* THE FRAME LETS GO OF THE POINTER while the box is moved by its
+         header, so the moves come to this page — see `followPointer`. */
+      ".dock.taken { user-select: none }",
+      ".dock.taken iframe { pointer-events: none }",
       /* On a phone there is no page left to keep visible, so it takes the
          screen — a 384px card floating over a 390px viewport is a lightbox
          with wasted margins. THE SAME ON A SHORT VIEWPORT, which is what a
@@ -2174,8 +2178,21 @@ export function createIdeaWidget(options) {
    * Not under a preview's panel, which is not somewhere a box was put, and
    * not on a full screen, where there is nowhere to move it. A number that
    * is not a number moves nothing.
+   *
+   * AND THEN THIS PAGE FOLLOWS THE POINTER ITSELF, when the page says where
+   * the press was (`sx`, `sy`, screen pixels — chats from 1.17.1 on). Every
+   * step that came through the frame waited for the chat: its main thread is
+   * busy drawing, so the moves arrived late and in bursts — measured on
+   * Courtside, gaps of 35 to 65 ms between steps that should be 19 apart —
+   * and the box lagged and stuttered behind the pointer. So at the start the
+   * frame stops taking the pointer (`.dock.taken`), the moves come to this
+   * document as they do for our own grip and the resize, and the box follows
+   * the pointer on the frame it moves in. The frame's own reports are then
+   * late copies and are ignored. A browser that keeps the pointer with the
+   * frame anyway still has them: until this document hears a move of its
+   * own, the frame's reports move the box as before.
    */
-  var pageDrag = null; // { left, top } of the box at the press
+  var pageDrag = null; // { left, top } of the box at the press, and `following`
 
   function pageGrip(data) {
     var phase = data.phase;
@@ -2187,11 +2204,18 @@ export function createIdeaWidget(options) {
       pageDrag = null;
       if (stuck) return;
       var box = overlay.getBoundingClientRect();
-      pageDrag = { left: box.left, top: box.top };
+      pageDrag = { left: box.left, top: box.top, following: false };
       overlay.classList.add("moving");
+      var sx = data.sx;
+      var sy = data.sy;
+      if (typeof sx === "number" && typeof sy === "number" && isFinite(sx) && isFinite(sy)) {
+        followPointer(pageDrag, sx, sy);
+      }
       return;
     }
     if (!pageDrag) return;
+    // This page has the pointer: what the frame says now is a late copy.
+    if (pageDrag.following) return;
     if (phase === "move") {
       if (sane && !stuck) placeAt(overlay, pageDrag.left + dx, pageDrag.top + dy);
       return;
@@ -2199,7 +2223,7 @@ export function createIdeaWidget(options) {
     if (phase !== "end") return;
     var began = pageDrag;
     pageDrag = null;
-    if (overlay) overlay.classList.remove("moving");
+    if (overlay) overlay.classList.remove("moving", "taken");
     if (!sane || stuck) return;
     var at = placeAt(overlay, began.left + dx, began.top + dy);
     try {
@@ -2207,6 +2231,44 @@ export function createIdeaWidget(options) {
     } catch (err) {
       /* Not remembering is a smaller problem than throwing while dropping. */
     }
+  }
+
+  /**
+   * The box follows the pointer from this document — see `pageGrip`. `sx`,
+   * `sy` are where the press was, on the screen; the box goes where it was
+   * plus the distance since, exactly as the frame would have reported it,
+   * only without waiting for the frame.
+   */
+  function followPointer(drag, sx, sy) {
+    overlay.classList.add("taken");
+    function to(e) {
+      return placeAt(overlay, drag.left + e.screenX - sx, drag.top + e.screenY - sy);
+    }
+    function move(e) {
+      if (pageDrag !== drag || !overlay) return;
+      drag.following = true;
+      to(e);
+    }
+    function drop(e) {
+      document.removeEventListener("pointermove", move, true);
+      document.removeEventListener("pointerup", drop, true);
+      document.removeEventListener("pointercancel", drop, true);
+      if (pageDrag !== drag) return;
+      pageDrag = null;
+      if (!overlay) return;
+      overlay.classList.remove("moving", "taken");
+      // Let go before this page heard a single move: nothing moved here.
+      if (!drag.following) return;
+      var at = to(e);
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(at));
+      } catch (err) {
+        /* Not remembering is a smaller problem than throwing while dropping. */
+      }
+    }
+    document.addEventListener("pointermove", move, true);
+    document.addEventListener("pointerup", drop, true);
+    document.addEventListener("pointercancel", drop, true);
   }
 
   /**
