@@ -33,6 +33,24 @@ export const CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"];
 /** When the chat may be built ahead of the click — see `preload`. */
 export const PRELOADS = ["intent", "eager", "off"];
 
+/** What the floating button may be: the labelled pill, the round mark, none. */
+export const LAUNCHERS = ["floating", "icon", "none"];
+
+/**
+ * THE AVOKAIDO MARK, for the round button: the three shapes of
+ * avo-design-tokens dist/brand/logo.svg (viewBox 38 −1 194 297), the same
+ * mark the chat fills behind the conversation. `MARK_BODY` is the outline's
+ * path alone, filled rather than stroked: the inside of the avocado, which
+ * the liquid tints as it rises. Drawn inline, like everything else here — no
+ * image request on somebody else's page.
+ */
+var MARK_VIEWBOX = "38 -1 194 297";
+var MARK_BODY = "M129.372 48.9325C141.392 30.1825 162.167 1.32223 189.326 8.02109C216.485 14.7199 217.602 59.4555 217.207 79.2316C216.812 99.0077 211.12 121.884 210.046 151.032C209.059 177.827 207.946 185.509 205.739 212.232C203.109 244.075 189.909 262.592 173.347 273.426C154.69 285.631 133.653 289.005 112.393 286.937C88.9404 284.655 63.9516 269.376 54.9252 252.124C38.7728 221.253 48.53 191.721 55.3153 174.374C64.8149 150.088 87.8168 123.737 101.735 100.337C109.804 86.7702 117.352 67.6825 129.372 48.9325Z";
+var MARK_SHAPES =
+  '<path d="' + MARK_BODY + '" fill="none" stroke="currentColor" stroke-width="10"/>' +
+  '<path d="M209.413 16.5097C208.709 15.5696 207.652 14.9448 206.482 14.7661C205.311 14.5878 204.124 14.8702 203.173 15.5577C202.222 16.2453 201.581 17.2837 201.383 18.451C201.185 19.6179 201.447 20.8182 202.118 21.7812C202.118 21.7812 202.118 21.7812 202.118 21.7812C205.178 26.1689 207.705 30.9011 209.717 35.8754C213.687 45.6856 215.657 56.3183 216.318 67.0757C217.963 90.4244 217.037 113.509 215.003 136.934C214.952 137.54 214.9 138.151 214.846 138.768C213.53 152.371 212.802 166.505 212.009 179.942C212.001 180.069 211.993 180.197 211.985 180.325C210.893 196.235 208.186 213.551 205.836 227.18C205.753 227.552 205.671 227.92 205.591 228.284C202.858 241.051 200.218 250.289 192.374 257.748C183.388 266.697 173.703 271.682 159.931 275.599C159.853 275.625 159.775 275.65 159.697 275.675C150.964 278.602 142.386 281.066 133.228 282.796C127.764 283.844 122.178 284.666 116.557 285.259C115.707 285.349 114.899 285.797 114.308 286.462C113.718 287.13 113.394 287.96 113.408 288.813C113.423 289.665 113.775 290.484 114.387 291.131C114.999 291.776 115.822 292.197 116.674 292.258C116.674 292.258 116.674 292.258 116.674 292.258C122.444 292.658 128.266 292.973 134.133 293.019C143.872 293.134 154.027 292.248 163.573 290.14C163.647 290.124 163.722 290.108 163.797 290.093C176.924 288.058 193.672 282.43 205.254 272.613C218.247 263.113 224.604 245.791 227.075 233.019C227.161 232.63 227.245 232.24 227.328 231.848C230.31 213.084 228.332 197.466 228.018 180.59C228.014 180.46 228.01 180.331 228.007 180.203C227.581 166.386 227.156 153.262 227.892 139.627C227.92 139.002 227.948 138.383 227.976 137.769C229.131 114.152 229.32 89.9466 226.891 66.2549C225.812 54.6646 223.319 43.0265 218.509 32.1427C216.074 26.6302 213.03 21.3467 209.413 16.5097Z" fill="currentColor"/>' +
+  '<path d="M85.4881 164.591C90.7284 136.651 114.679 117.695 138.982 122.253C163.286 126.811 178.74 153.157 173.5 181.098C168.259 209.038 144.309 227.993 120.006 223.435C95.7021 218.876 80.248 192.531 85.4881 164.591ZM138.307 128.503C125.203 126.459 111.044 132.607 101.426 146.11C94.9277 155.232 91.613 166.155 91.3895 176.837C93.347 171.393 95.8533 166.028 98.9247 160.878C109.258 143.554 123.779 132.268 138.307 128.503Z" fill="currentColor"/>';
+
 /** A frame built ahead that never says it is ready is dropped after this. */
 var READY_WITHIN_MS = 20000;
 
@@ -60,8 +78,9 @@ export const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  * @param {string} [options.origin]       where the interview is hosted
  * @param {string} [options.label]        launcher text and iframe title
  * @param {"floating"|"icon"|"none"} [options.launcher]
- *        `"floating"` is the labelled pill, `"icon"` a round lightbulb in the
- *        same corner, `"none"` no button at all — open it from your own menu
+ *        `"floating"` is the labelled pill, `"icon"` the round Avokaido mark
+ *        in the same corner, which fills as the chat understands the request,
+ *        `"none"` no button at all — open it from your own menu
  *        with `open(menuItem)`, and the box opens under that item; listen for
  *        `avokaido:visibility` to know whether to show it.
  * @param {"avo"|Object} [options.theme]
@@ -351,6 +370,40 @@ export function createIdeaWidget(options) {
   var origin = String(opts.origin || DEFAULT_ORIGIN).replace(/\/+$/, "");
   var label = opts.label || "Suggest a change";
   var launcher = String(opts.launcher || "floating").toLowerCase();
+  if (LAUNCHERS.indexOf(launcher) < 0) launcher = "floating";
+  /**
+   * THE BUTTON: THE PILL, OR THE ROUND MARK. The code says which
+   * (`launcher`); the team can choose the other one in Settings → Design
+   * system, which the audience check hands over as `launcher`
+   * ([teamLauncher]); and each person can switch for themselves in the box's
+   * More menu (`avokaido:launcher` from the chat), remembered in this
+   * browser ([LAUNCHER_KEY]) — the same order as the look.
+   *
+   * NEVER OVER `"none"`. An app that put "Suggest a change" in its own menu
+   * has no corner for a button, and neither a team setting nor a person can
+   * give it one.
+   */
+  var LAUNCHER_KEY = "avokaido.ideas.launcher";
+  /** `"icon"` or `"floating"` when the team chose one, else null. */
+  var teamLauncher = null;
+  /** This person's own choice, `"icon"` or `"floating"`, or null for none. */
+  var personalLauncher = rememberedLauncher();
+
+  /** The button drawn now: `"floating"`, `"icon"` or `"none"`. */
+  function shape() {
+    if (launcher === "none") return "none";
+    return personalLauncher || teamLauncher || launcher;
+  }
+
+  /** The person's remembered button, or null. Storage can refuse: then none. */
+  function rememberedLauncher() {
+    try {
+      var saved = localStorage.getItem(LAUNCHER_KEY);
+      return saved === "icon" || saved === "floating" ? saved : null;
+    } catch (e) {
+      return null;
+    }
+  }
   // Validated once, here, because it becomes a CSS class on the dock as well
   // as on the launcher: an unrecognised value used to give the launcher a class
   // that matched nothing and left it in the corner by accident, which would now
@@ -680,6 +733,14 @@ export function createIdeaWidget(options) {
         paths: Array.isArray(body.paths) ? body.paths : [],
         visitor: Boolean(body.visitor),
       };
+      // THE TEAM'S BUTTON, chosen in Settings: here, before the button is
+      // first shown (`settle`), so it is first seen as the team chose it.
+      var teamShape =
+        body.launcher === "icon" || body.launcher === "floating" ? body.launcher : null;
+      if (teamShape !== teamLauncher) {
+        teamLauncher = teamShape;
+        drawLauncher();
+      }
       // THE TEAM'S LOOK: `"avo"` when the link is set to Avokaido's look in
       // the console, which wins over the page and over the app's own `theme`
       // — it is how a team that does not like what was read goes back,
@@ -830,6 +891,25 @@ export function createIdeaWidget(options) {
       /* Private mode, a full quota: it holds for this visit only. */
     }
     readTheme();
+    tellTheme();
+  }
+
+  /**
+   * `avokaido:launcher` from the chat: this person wants the round mark
+   * (`"icon"`) or the labelled pill (`"floating"`). Kept for their next visit,
+   * drawn now, and told back to the chat, whose More menu then offers the
+   * other one.
+   */
+  function setLauncher(next) {
+    if (next !== "icon" && next !== "floating") return;
+    if (launcher === "none") return;
+    personalLauncher = next;
+    try {
+      localStorage.setItem(LAUNCHER_KEY, next);
+    } catch (e) {
+      /* Private mode, a full quota: it holds for this visit only. */
+    }
+    drawLauncher();
     tellTheme();
   }
 
@@ -1003,6 +1083,11 @@ export function createIdeaWidget(options) {
       full: fullScreen(),
       look: avoOn ? "avo" : "site",
       siteLook: siteLook,
+      // WHICH BUTTON IS ON, for the same menu: null where there is none to
+      // switch (`launcher: "none"`), and the pill's words, so the menu can
+      // name it as the page does.
+      launcher: shape() === "none" ? null : shape(),
+      launcherLabel: String(label).slice(0, 60),
     });
   }
 
@@ -1074,7 +1159,25 @@ export function createIdeaWidget(options) {
          accessible name, for an app whose corner has no room for words. */
       ".launcher.icon { width: 48px; height: 48px; padding: 0;",
       "  justify-content: center }",
-      ".launcher.icon svg { width: 22px; height: 22px; display: block }",
+      ".launcher .face { display: inline-flex; align-items: center; pointer-events: none }",
+      /* THE AVOKAIDO MARK, 28 high in a 48 circle, in the colour that reads
+         on the primary. Its own transform and opacity, never the button's:
+         the button's scale is the drag's lift. */
+      /* CENTRED BY EYE, NOT BY BOX: the mark leans right — its highlight
+         runs up the right side — so centred by its edges it looks off to the
+         right. 1.5 to the left puts the avocado's body and seed in the
+         middle of the circle. */
+      ".launcher.icon .mark { display: block; height: 28px; width: 18.3px;",
+      "  position: relative; left: -1.5px;",
+      "  overflow: visible; transform-origin: 50% 60% }",
+      /* SOLID UNTIL A CONVERSATION IS GOING. Then the mark goes faint and
+         fills from the bottom like liquid — the avocado's inside tinted, its
+         lines solid below the surface — with the chat's "% understood"
+         (`avokaido:level`), as the mark behind the conversation does. */
+      ".launcher .liquid { display: none }",
+      ".launcher.filling .liquid { display: inline }",
+      ".launcher.filling .ghost { opacity: .42 }",
+      ".launcher .liquid .body { fill: currentColor; opacity: .3 }",
       ".launcher:focus-visible { outline: 2px solid var(--w-primary, #2C4112);",
       "  outline-offset: 3px }",
       /* A REQUEST IS WAITING IN THE CLOSED BOX: a small accent dot on the
@@ -1105,9 +1208,11 @@ export function createIdeaWidget(options) {
       /* Hover only where there is a pointer that hovers: a tap would
          otherwise leave the bubble stuck up on a phone. Focus everywhere. */
       "@media (hover: hover) {",
-      "  .launcher.icon:hover .tip, .launcher.pending:hover .tip { display: block }",
+      "  .launcher.icon:hover .tip, .launcher.pending:hover .tip,",
+      "  .launcher.progress:hover .tip { display: block }",
       "}",
-      ".launcher.icon:focus-visible .tip, .launcher.pending:focus-visible .tip { display: block }",
+      ".launcher.icon:focus-visible .tip, .launcher.pending:focus-visible .tip,",
+      ".launcher.progress:focus-visible .tip { display: block }",
       /* Never while the box is open — it is in front of what was waiting —
          and never while the launcher is held or gliding. */
       ".launcher[aria-expanded='true'] .dot, .launcher[aria-expanded='true'] .tip,",
@@ -1755,6 +1860,7 @@ export function createIdeaWidget(options) {
     pageDrag = null;
     // The conversation went with the frame, and whatever was waiting in it.
     setPending(null);
+    setLevel(null);
   }
 
   /**
@@ -2576,6 +2682,10 @@ export function createIdeaWidget(options) {
       setPending(event.data.state);
     } else if (type === "avokaido:look") {
       setLook(event.data.look);
+    } else if (type === "avokaido:launcher") {
+      setLauncher(event.data.launcher);
+    } else if (type === "avokaido:level") {
+      setLevel(event.data);
     }
   }
 
@@ -2616,14 +2726,225 @@ export function createIdeaWidget(options) {
   function drawPending() {
     var el = root && root.querySelector(".launcher");
     if (!el) return;
+    var round = shape() === "icon";
     var says = pending ? PENDING_SAYS[pending] : "";
+    // HOW FAR THE CONVERSATION IS, while one is going: the words the chat's
+    // own pill says, so pointing at the button tells what the fill means.
+    var progress = level
+      ? level.thinking ? "Thinking…" : level.percent + " % understood"
+      : "";
     el.classList.toggle("pending", Boolean(pending));
+    el.classList.toggle("progress", Boolean(progress) && !says);
     var tip = el.querySelector(".tip");
-    if (tip) tip.textContent = says || (launcher === "icon" ? label : "");
-    var name = says ? label + ". " + says : launcher === "icon" ? label : "";
+    if (tip) tip.textContent = says || progress || (round ? label : "");
+    var name = says ? label + ". " + says
+      : progress ? label + ". " + progress
+      : round ? label : "";
     if (name) el.setAttribute("aria-label", name);
     else el.removeAttribute("aria-label");
   }
+
+  /**
+   * The button's face for the shape now ([shape]): the label on the pill, the
+   * mark in the circle. Its listeners, its dot and its bubble stay — only the
+   * face and the class change — so a switch from the More menu happens in
+   * place, under the pointer that asked for it.
+   */
+  var markSeq = 0;
+  function drawLauncher() {
+    var el = root && root.querySelector(".launcher");
+    if (!el) return;
+    var round = shape() === "icon";
+    var face = el.querySelector(".face");
+    if (!face) {
+      face = document.createElement("span");
+      face.className = "face";
+      el.insertBefore(face, el.firstChild);
+    }
+    if (face.getAttribute("data-shape") !== shape()) {
+      face.setAttribute("data-shape", shape());
+      el.classList.toggle("icon", round);
+      if (round) {
+        // The liquid's clip needs an id; one per mark, so two widgets on a
+        // page never share one.
+        var clip = "avk-liquid-" + ++markSeq;
+        face.innerHTML =
+          '<svg class="mark" viewBox="' + MARK_VIEWBOX + '" aria-hidden="true">' +
+          '<defs><clipPath id="' + clip + '"><path class="surface" d=""/></clipPath></defs>' +
+          '<g class="ghost">' + MARK_SHAPES + "</g>" +
+          '<g class="liquid" clip-path="url(#' + clip + ')">' +
+          '<path class="body" d="' + MARK_BODY + '"/>' + MARK_SHAPES + "</g></svg>";
+      } else {
+        face.textContent = label;
+      }
+      liquid.drawn = false;
+    }
+    drawPending();
+    drawLevel();
+  }
+
+  /**
+   * HOW MUCH OF THE REQUEST IS UNDERSTOOD — `avokaido:level` from the chat,
+   * `{ percent, thinking, active }`: the same number as its "% understood"
+   * pill, whether a reply is being written, and whether a conversation is
+   * going at all. Null when none is — nothing said yet, started again, sent,
+   * or the frame gone — and the mark is solid again.
+   */
+  var level = null;
+
+  function setLevel(data) {
+    var d = data || {};
+    var next = d.active === true
+      ? {
+          percent: Math.max(0, Math.min(100, Math.round(Number(d.percent) || 0))),
+          thinking: d.thinking === true,
+        }
+      : null;
+    if (
+      next === level ||
+      (next && level && next.percent === level.percent && next.thinking === level.thinking)
+    ) {
+      return;
+    }
+    level = next;
+    drawPending();
+    drawLevel();
+  }
+
+  /**
+   * THE LIQUID, moved the way the chat's mark moves it (cloud_services
+   * `idea_lamp.dart`): the level is a spring toward the percentage, with a
+   * little overshoot; the surface keeps a slow wave and sloshes when the
+   * number jumps; the mark breathes while a reply is being written and gives
+   * one small bounce when the request is ready. The waves are taller here in
+   * the mark's units, so they still show at 28 pixels.
+   *
+   * ONE ANIMATION FRAME LOOP, and only while something moves: settled, not
+   * breathing and not bouncing, it stops. A resumed chat
+   * starts at its level rather than filling up from empty again. With
+   * reduced motion the level just is the percentage and nothing moves.
+   */
+  var liquid = {
+    level: 0, velocity: 0, opacity: 1, scale: 1, clock: 0,
+    last: 0, thinkingSince: null, readyAt: null, raf: 0, drawn: false,
+  };
+
+  function stillMotion() {
+    try {
+      return Boolean(
+        window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      );
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function drawLevel() {
+    var el = root && root.querySelector(".launcher");
+    var on = Boolean(el && level && shape() === "icon");
+    if (el) el.classList.toggle("filling", on);
+    if (!on) {
+      if (liquid.raf) cancelAnimationFrame(liquid.raf);
+      liquid.raf = 0;
+      liquid.drawn = false;
+      var mark = el && el.querySelector(".mark");
+      if (mark) {
+        mark.style.opacity = "";
+        mark.style.transform = "";
+      }
+      return;
+    }
+    var target = level.percent / 100;
+    var ready = level.percent >= 100 && !level.thinking;
+    if (!liquid.drawn) {
+      // Starts where the conversation is, not from empty.
+      liquid.drawn = true;
+      liquid.level = target;
+      liquid.velocity = 0;
+      liquid.thinkingSince = level.thinking ? liquid.clock : null;
+      liquid.readyAt = ready ? -Infinity : null;
+    } else {
+      if (level.thinking) {
+        if (liquid.thinkingSince === null) liquid.thinkingSince = liquid.clock;
+      } else {
+        liquid.thinkingSince = null;
+      }
+      if (ready) {
+        if (liquid.readyAt === null) liquid.readyAt = liquid.clock;
+      } else {
+        liquid.readyAt = null;
+      }
+    }
+    if (!liquid.raf) {
+      liquid.last = 0;
+      liquid.raf = requestAnimationFrame(tickLiquid);
+    }
+  }
+
+  function tickLiquid(now) {
+    liquid.raf = 0;
+    var el = root && root.querySelector(".launcher");
+    var mark = el && el.querySelector(".mark");
+    var surface = mark && mark.querySelector(".surface");
+    if (!surface || !level || shape() !== "icon") return;
+    var seconds = liquid.last ? Math.max(0, (now - liquid.last) / 1000) : 0;
+    liquid.last = now;
+    liquid.clock += seconds;
+    var dt = Math.min(0.05, seconds);
+    var target = level.percent / 100;
+    var still = stillMotion();
+
+    if (still) {
+      liquid.level = target;
+      liquid.velocity = 0;
+    } else {
+      // About 9% overshoot, settled in roughly a second.
+      liquid.velocity += (38 * (target - liquid.level) - 7.5 * liquid.velocity) * dt;
+      liquid.level += liquid.velocity * dt;
+    }
+
+    // Breathing with the chat's pill: .55 → 1 → .55 over 1.4 s.
+    var since = liquid.thinkingSince;
+    var breath = since === null || still
+      ? 1
+      : 0.55 + 0.45 * (1 - Math.abs(2 * (((liquid.clock - since) / 1.4) % 1) - 1));
+    liquid.opacity += (breath - liquid.opacity) * (1 - Math.exp(-dt / 0.08));
+
+    // Ready: one bounce to 1.06 over 0.8 s, 0.45 s after.
+    var at = liquid.readyAt;
+    var u = at === null || still ? -1 : (liquid.clock - at - 0.45) / 0.8;
+    liquid.scale = u > 0 && u < 1 ? 1 + 0.06 * Math.sin(Math.PI * u) : 1;
+
+    // The surface, in the mark's own units (viewBox 38 −1 194 297).
+    var amp = still
+      ? 0
+      : (level.thinking ? 14 : 10) + Math.min(24, Math.abs(liquid.velocity) * 36);
+    var base = 296 + amp + 2 - liquid.level * (297 + 3 * amp + 6);
+    var d = "M26 326";
+    for (var i = 0; i <= 24; i++) {
+      var x = 26 + (218 * i) / 24;
+      var y = base + amp * (0.65 * Math.sin(x / 24 + 1.7 * liquid.clock) +
+        0.35 * Math.sin(x / 10.5 - 2.6 * liquid.clock));
+      d += "L" + x.toFixed(1) + " " + y.toFixed(1);
+    }
+    surface.setAttribute("d", d + "L244 326Z");
+    mark.style.opacity = liquid.opacity > 0.999 ? "" : liquid.opacity.toFixed(3);
+    mark.style.transform = liquid.scale === 1 ? "" : "scale(" + liquid.scale.toFixed(4) + ")";
+
+    // RESTING WHEN NOTHING HAPPENS. This loop runs on somebody else's page,
+    // so once the level has settled, with nothing breathing or bouncing, it
+    // stops — the surface keeps its last wave — until the chat says more.
+    var settled =
+      Math.abs(target - liquid.level) < 0.001 &&
+      Math.abs(liquid.velocity) < 0.001 &&
+      (since === null || still) &&
+      (at === null || u >= 1 || still);
+    if (!settled && !destroyed) liquid.raf = requestAnimationFrame(tickLiquid);
+  }
+  teardown.push(function () {
+    if (liquid.raf) cancelAnimationFrame(liquid.raf);
+    liquid.raf = 0;
+  });
   window.addEventListener("message", onMessage);
   teardown.push(function () {
     window.removeEventListener("message", onMessage);
@@ -2647,24 +2968,13 @@ export function createIdeaWidget(options) {
       readTheme();
       var button = document.createElement("button");
       button.type = "button";
-      button.className = "launcher " + corner + (launcher === "icon" ? " icon" : "");
+      button.className = "launcher " + corner;
       button.hidden = !allowed();
-      if (launcher === "icon") {
-        // The name is spoken from here and shown in our own bubble when it
-        // is pointed at (`.tip`) — not a `title`, which would put the
-        // browser's tooltip on top of ours a second later.
-        button.setAttribute("aria-label", label);
-        // A lightbulb, drawn inline: no icon font or image request on
-        // somebody else's page.
-        button.innerHTML =
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-          'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
-          'aria-hidden="true"><path d="M9 18h6"/><path d="M10 22h4"/>' +
-          '<path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 ' +
-          '1-2.1A7 7 0 0 0 12 2z"/></svg>';
-      } else {
-        button.textContent = label;
-      }
+      // The round button's name is spoken from `aria-label` and shown in our
+      // own bubble when it is pointed at (`.tip`) — not a `title`, which would
+      // put the browser's tooltip on top of ours a second later. The face —
+      // the label, or the mark — is drawn by `drawLauncher` once the button
+      // is in the page, and again whenever the shape is switched.
       // The dot for a request waiting, and the bubble that says what it is —
       // both hidden from a screen reader, which hears the name instead (see
       // `drawPending`).
@@ -2693,7 +3003,7 @@ export function createIdeaWidget(options) {
         else open();
       });
       root.appendChild(button);
-      drawPending();
+      drawLauncher();
     };
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", start);

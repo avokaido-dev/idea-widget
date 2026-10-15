@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.17.0
+
+**The round button is the Avokaido mark, and it fills as the chat
+understands.** `launcher: "icon"` used to be a lightbulb. It is now the
+Avokaido mark — the one behind the conversation — and while somebody is
+talking to the box it fills from the bottom like liquid with the chat's
+"% understood": a spring level, a slow wave that sloshes when the number
+jumps, a breath while a reply is being written, one bounce when the request
+is ready. Pointing at it says "45 % understood" (or "Thinking…"). Solid
+again once nothing is going: not started, started again, sent.
+
+- The chat says how far it is with `avokaido:level` (`{ percent, thinking,
+  active }`); the pill gets the same words in its bubble.
+- One animation-frame loop, and only while something moves; reduced motion
+  holds it still.
+
+**Which button, chosen without a release.** The team can choose the pill or
+the round mark in Settings → Design system (`launcher` from the audience
+check), and each person can switch in the box's More menu
+(`avokaido:launcher`, kept in `avokaido.ideas.launcher`). Order: the
+person, the team, the code. Never over `launcher: "none"`.
+
+- `avokaido:theme` adds `launcher` (null where there is none to switch)
+  and `launcherLabel`, for the menu's words.
+- An unrecognised `launcher` is the pill, as it always looked.
+
 ## 1.16.0
 
 **The box wears the design system your team saved in Avokaido.** Until now

@@ -277,8 +277,12 @@ still only opens a suggestion box.
 Three ways for people to open it, all onto the same dock over your page:
 
 - **The labelled pill** (the default) — `data-launcher` left out.
-- **A round icon** in the same corner — `data-launcher="icon"`. The label
-  becomes its accessible name, and pointing at it shows it in a small bubble.
+- **A round button with the Avokaido mark** in the same corner —
+  `data-launcher="icon"`. The label becomes its accessible name, and
+  pointing at it shows it in a small bubble. While somebody is talking to
+  the box, the mark fills from the bottom like liquid with how much of
+  their request is understood — the chat's own "% understood" — breathes
+  while a reply is being written, and pointing at it says the number.
 - **A button in your own navigation** — `data-launcher="none"`, and your
   button calls `window.avokaido.openIdeas()`. The box opens **right under
   your button**, the way a menu does, rather than in a corner of the screen.
@@ -397,6 +401,13 @@ the widget's links). It reaches your pages within a minute and needs no
 change to your app. It also wins over a `data-theme` in your code. In
 code, the same choice is `data-theme="avo"` (or `theme: "avo"`).
 
+**Which button, too.** The team can pick the pill or the round mark for
+the app's box in the Avokaido console (Settings → Design system → The
+Suggest a change box), which wins over `data-launcher` without a release
+of your app; each person can switch for themselves in the box's More menu,
+remembered in their browser. Neither ever puts a button on a page that
+uses `data-launcher="none"`.
+
 **Each person can switch it for themselves**, in the box's More menu: "Use
 Avokaido's colours" or "Use this site's colours". It is remembered in their
 browser and changes only their launcher and box, never your page, and wins
@@ -410,7 +421,7 @@ Script tag attributes, and the equivalent options:
 |---|---|---|---|
 | `data-key` | `key` | — | **Required.** Your `avk_…` link key. |
 | `data-label` | `label` | `"Suggest a change"` | Launcher text, and the iframe's accessible title. |
-| `data-launcher` | `launcher` | `"floating"` | `"icon"` for a round lightbulb, `"none"` if your page has its own button — the box then opens under it. See [Your own menu item, or an icon](#your-own-menu-item-or-an-icon). |
+| `data-launcher` | `launcher` | `"floating"` | `"icon"` for the round Avokaido mark, `"none"` if your page has its own button — the box then opens under it. See [Your own menu item, or an icon](#your-own-menu-item-or-an-icon). |
 | `data-position` | `position` | `"bottom-right"` | Any of the four corners — where the launcher starts, until the person drags it to another. An unrecognised value falls back rather than leaving the dock unpositioned. |
 | `data-theme` | `theme` | read from your page | Your app's theme as JSON — `{"primary":"#3451D1","radius":10}` — which wins over what is read off the page, or `"avo"` to always use Avokaido's look. See [Looking like your site](#looking-like-your-site). |
 | `data-preload` | `preload` | `"intent"` | When the chat is built ahead of the click, so it opens instantly: `"intent"` when the launcher is pointed at, focused or touched, or after a few idle seconds; `"eager"` as soon as the launcher may show (an app's own dashboard); `"off"` only on the click. Built ahead, it stays out of sight and holds no connection until opened, and closing keeps it for the next open. |

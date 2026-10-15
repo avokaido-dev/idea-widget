@@ -27,10 +27,13 @@ export interface IdeaWidgetOptions {
   /** Launcher text and the iframe's accessible title. */
   label?: string;
   /**
-   * `"floating"` (the labelled pill), `"icon"` (a round lightbulb), or
+   * `"floating"` (the labelled pill), `"icon"` (the round Avokaido mark,
+   * which fills with how much of the request is understood), or
    * `"none"` if your page has its own button — open it with
    * {@link IdeaWidget.open}, passing that button so the box opens right under
-   * it, and hide the button on `avokaido:visibility`.
+   * it, and hide the button on `avokaido:visibility`. The team's choice in
+   * the Avokaido console, and each person's in the box's More menu, win over
+   * `"floating"` and `"icon"`; nothing puts a button where this is `"none"`.
    */
   launcher?: "floating" | "icon" | "none";
   /**

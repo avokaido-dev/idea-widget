@@ -781,8 +781,8 @@ describe("how people open it", () => {
   const tag = readFileSync(join(root, "src/script-tag.js"), "utf8");
 
   it("has a round icon launcher whose label is its accessible name", () => {
-    assert.match(core, /launcher === "icon" \? " icon" : ""/);
-    assert.match(core, /button\.setAttribute\("aria-label", label\)/);
+    assert.match(core, /el\.classList\.toggle\("icon", round\)/);
+    assert.match(core, /: round \? label : "";/);
     assert.match(core, /\.launcher\.icon \{ width: 48px; height: 48px/);
   });
 
@@ -931,5 +931,74 @@ describe("the chat kept warm", () => {
 
   it("hears Escape from inside the chat, and keeps it", () => {
     assert.match(core, /type === "avokaido:dismiss"\) \{[\s\S]*?close\("escape"\);/);
+  });
+});
+
+describe("the round button: the Avokaido mark", () => {
+  it("draws the mark inline, and no lightbulb", () => {
+    assert.match(dist, /var MARK_VIEWBOX = "38 -1 194 297";/);
+    assert.match(dist, /<g class="ghost">' \+ MARK_SHAPES/);
+    assert.equal(/M9 18h6/.test(dist), false);
+  });
+
+  it("gives every mark its own clip, so two widgets never share one", () => {
+    assert.match(core, /var clip = "avk-liquid-" \+ \+\+markSeq;/);
+  });
+
+  it("is solid until a conversation is going, then fills", () => {
+    assert.match(dist, /\.launcher \.liquid \{ display: none \}/);
+    assert.match(dist, /\.launcher\.filling \.liquid \{ display: inline \}/);
+    assert.match(core, /el\.classList\.toggle\("filling", on\)/);
+  });
+
+  it("takes the level only from the chat, clamped, and clears with the frame", () => {
+    assert.match(core, /type === "avokaido:level"\) \{\s+setLevel\(event\.data\);/);
+    assert.match(core, /Math\.max\(0, Math\.min\(100, Math\.round\(Number\(d\.percent\) \|\| 0\)\)\)/);
+    assert.match(core, /function discard\(\) \{[\s\S]*?setLevel\(null\);/);
+  });
+
+  it("says how far the chat is when pointed at, in the pill's words", () => {
+    assert.match(core, /level\.thinking \? "Thinking…" : level\.percent \+ " % understood"/);
+    assert.match(dist, /\.launcher\.progress:hover \.tip \{ display: block \}/);
+  });
+
+  it("moves the mark, never the button, whose scale is the drag's lift", () => {
+    assert.match(core, /mark\.style\.transform = /);
+    assert.equal(/button\.style\.transform = "scale/.test(core), false);
+  });
+
+  it("stops its animation loop once nothing moves, and on teardown", () => {
+    assert.match(core, /if \(!settled && !destroyed\) liquid\.raf = requestAnimationFrame\(tickLiquid\);/);
+    assert.match(core, /teardown\.push\(function \(\) \{\s+if \(liquid\.raf\) cancelAnimationFrame\(liquid\.raf\);/);
+  });
+
+  it("holds still for reduced motion", () => {
+    assert.match(core, /\(prefers-reduced-motion: reduce\)/);
+  });
+});
+
+describe("which button: the code's, the team's, the person's", () => {
+  it("knows only the three shapes, and treats anything else as the pill", () => {
+    assert.match(core, /export const LAUNCHERS = \["floating", "icon", "none"\];/);
+    assert.match(core, /if \(LAUNCHERS\.indexOf\(launcher\) < 0\) launcher = "floating";/);
+  });
+
+  it("puts the person first, then the team, then the code, and never over none", () => {
+    assert.match(core, /if \(launcher === "none"\) return "none";\s+return personalLauncher \|\| teamLauncher \|\| launcher;/);
+  });
+
+  it("takes the team's choice from the audience check before the button shows", () => {
+    assert.match(core, /body\.launcher === "icon" \|\| body\.launcher === "floating" \? body\.launcher : null/);
+  });
+
+  it("keeps the person's choice in this browser, from the chat's More menu", () => {
+    assert.match(dist, /"avokaido\.ideas\.launcher"/);
+    assert.match(core, /type === "avokaido:launcher"\) \{\s+setLauncher\(event\.data\.launcher\);/);
+    assert.match(core, /function setLauncher\(next\) \{\s+if \(next !== "icon" && next !== "floating"\) return;\s+if \(launcher === "none"\) return;/);
+  });
+
+  it("tells the chat which button is on, and none where there is none", () => {
+    assert.match(core, /launcher: shape\(\) === "none" \? null : shape\(\),/);
+    assert.match(core, /launcherLabel: String\(label\)\.slice\(0, 60\),/);
   });
 });
