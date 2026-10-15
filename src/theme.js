@@ -722,7 +722,10 @@ export function matchTheme(root, repo, remembered) {
     var waiting = Boolean(page && page.waiting);
     var kept = fillFromBrand(found, page, brandOf(remembered), waiting);
     var theme = derive(found);
-    return themeResult(theme, found, waiting && (!theme.matched || kept));
+    // A canvas not drawn yet is read again while the look still leans on it:
+    // nothing matched, memory standing in, or a primary from the code or the
+    // design system with the page's own background still to come.
+    return themeResult(theme, found, waiting && (!theme.matched || kept || !found.background));
   } catch (err) {
     if (typeof console !== "undefined" && console.warn) {
       console.warn("[avokaido] could not read the page's theme; using Avo default", err);
@@ -780,22 +783,30 @@ function sameColour(a, b) {
  *   everything else is sage — so it is the same site on a quieter screen.
  *   The primary comes from memory; everything else is read now.
  * - The page has NOT DRAWN YET (`waiting`): a Flutter app after a refresh.
- *   The remembered look stands until the read that follows finds the real
- *   one, rather than Avo's green flashing first. It stays `waiting`, so that
- *   read still happens.
+ *   The remembered look stands — every role the code or the design system
+ *   did not give — until the read that follows finds the real one, rather
+ *   than Avo's green flashing first. It stays `waiting`, so that read still
+ *   happens.
  *
  * A different background is a different look — a site switched to light
  * mode — and memory is not used: half a match is still worse than none.
  * Returns whether memory filled anything.
  */
 function fillFromBrand(found, page, brand, waiting) {
-  if (!brand || found.primary) return false;
+  if (!brand) return false;
   if (waiting) {
-    found.primary = { v: brand.primary, src: REMEMBERED, from: "page" };
-    if (!found.background) found.background = { v: brand.background, src: REMEMBERED, from: "page" };
-    if (!found.text && brand.text) found.text = { v: brand.text, src: REMEMBERED, from: "page" };
-    return true;
+    var filled = false;
+    var fill = function (k, v) {
+      if (found[k] || !v) return;
+      found[k] = { v: v, src: REMEMBERED, from: "page" };
+      filled = true;
+    };
+    fill("primary", brand.primary);
+    fill("background", brand.background);
+    fill("text", brand.text);
+    return filled;
   }
+  if (found.primary) return false;
   if (!page || !page.readable || !found.background || found.background.from !== "page") return false;
   if (!sameColour(found.background.v, brand.background)) return false;
   found.primary = { v: brand.primary, src: REMEMBERED, from: "page" };
@@ -859,6 +870,51 @@ export function themeOption(value) {
     any = true;
   });
   return any ? out : null;
+}
+
+/**
+ * The design system saved in Avokaido for the link's app, as the audience
+ * check hands it over — `{ primary, background, text, fontBody, fontHead,
+ * radius, app }`, `app` null for the design system for all apps — cleaned
+ * like a `theme` option and credited to it; or null.
+ *
+ * THE TEAM'S DESIGN SYSTEM, BETWEEN THE CODE AND THE PAGE. It is what the
+ * team saved in Settings → Design system, the one Cloud Runner builds read,
+ * so it outranks what one screen of the page happens to show — fonts and
+ * corners included, which a canvas app's pixels never give. A `theme` in
+ * the app's own code outranks it, value by value (`withSystem`). It comes
+ * from our server, but through a public response, so every value is held
+ * to the same rules as one written in a page's script tag.
+ */
+export function systemTheme(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  var app =
+    typeof value.app === "string" && /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(value.app)
+      ? value.app
+      : null;
+  var src = (app ? app + "'s" : "all apps'") + " design system, in Avokaido";
+  var boxed = {};
+  THEME_KEYS.forEach(function (k) {
+    var v = value[k];
+    if (v != null && typeof v !== "object") boxed[k] = { v: v, src: src };
+  });
+  return themeOption(boxed);
+}
+
+/**
+ * The theme a read uses when the team has a design system: the app's code
+ * ([code], a cleaned `theme` option) over the design system ([system]),
+ * value by value. `"avo"` stays `"avo"`.
+ */
+export function withSystem(code, system) {
+  if (!system || code === "avo") return code;
+  if (!code) return system;
+  var out = {};
+  THEME_KEYS.forEach(function (k) {
+    if (code[k]) out[k] = code[k];
+    else if (system[k]) out[k] = system[k];
+  });
+  return out;
 }
 
 function cleanThemeValue(k, v) {

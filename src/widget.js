@@ -25,7 +25,7 @@
  * every message is origin-checked.
  */
 
-import { launcherFont, matchTheme, themeOption } from "./theme.js";
+import { launcherFont, matchTheme, systemTheme, themeOption, withSystem } from "./theme.js";
 
 /** Corners the launcher and the dock may sit in. */
 export const CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"];
@@ -382,9 +382,15 @@ export function createIdeaWidget(options) {
    * what the app was written to look like, where one screen of the page is
    * only what it happens to show. `"avo"` switches the reading off.
    *
-   * AND THE TEAM'S CHOICE WINS OVER BOTH: a link set to Avokaido's look in
-   * the console (`look: "avo"` from the server, see the audience check) is
-   * Avo default whatever the page or the code says.
+   * THE TEAM'S DESIGN SYSTEM SITS BETWEEN THEM: the one saved in Settings →
+   * Design system for the link's app (or all apps'), which the audience check
+   * hands over as `theme` ([teamTheme]). It outranks the page — fonts and
+   * corners too, which a canvas app's pixels never give — and the app's own
+   * `theme` outranks it, value by value.
+   *
+   * AND THE TEAM'S CHOICE WINS OVER ALL THREE: a link set to Avokaido's look
+   * in the console (`look: "avo"` from the server, see the audience check) is
+   * Avo default whatever the page, the code or the design system says.
    *
    * AND EACH PERSON'S OWN CHOICE WINS FOR THEM: the box's More menu says
    * "Use Avokaido's colours" or "Use this site's colours" (`avokaido:look`
@@ -406,6 +412,10 @@ export function createIdeaWidget(options) {
   var codeChoice = themeOption(opts.theme);
   /** `"avo"` when the team set the link to Avokaido's look, else null. */
   var teamLook = null;
+  /** The team's design system for this link's app, cleaned, or null. */
+  var teamTheme = null;
+  /** The last look reported to `POST /look`, so a page view sends it once. */
+  var reportedLook = "";
   var LOOK_KEY = "avokaido.ideas.look";
   /** This person's own choice, `"avo"` or `"site"`, or null for none. */
   var personalLook = rememberedLook();
@@ -670,10 +680,20 @@ export function createIdeaWidget(options) {
       // without a release of its app. Anything else, a missing field
       // included, leaves the look as it is. Here, before the button is first
       // shown (`settle`), so it is never seen in the site's colours first.
+      // THE TEAM'S DESIGN SYSTEM, the same way and at the same moment: what
+      // Settings → Design system holds for this link's app, so the launcher
+      // is first drawn in it rather than in what one screen happens to show.
+      var lookChanged = false;
       if (body.look === "avo" && teamLook !== "avo") {
         teamLook = "avo";
-        if (host) readTheme();
+        lookChanged = true;
       }
+      var system = systemTheme(body.theme);
+      if (system && JSON.stringify(system) !== JSON.stringify(teamTheme)) {
+        teamTheme = system;
+        lookChanged = true;
+      }
+      if (lookChanged && host) readTheme();
       if (rules.paths.length > 0) watchRoute();
       checkVisitor();
     })
@@ -772,9 +792,9 @@ export function createIdeaWidget(options) {
   function themeChoice() {
     var code = codeChoice === "avo" ? null : codeChoice;
     if (personalLook === "avo") return "avo";
-    if (personalLook === "site") return code;
+    if (personalLook === "site") return withSystem(code, teamTheme);
     if (teamLook === "avo") return "avo";
-    return codeChoice;
+    return withSystem(codeChoice, teamTheme);
   }
 
   /** The person's remembered look, or null. Storage can refuse: then none. */
@@ -831,9 +851,46 @@ export function createIdeaWidget(options) {
     }
   }
 
+  /**
+   * Tells Avokaido the colours this page was matched to, for the team's
+   * Settings → Design system ("Read off the site"), where they can be made
+   * the app's design system with one press.
+   *
+   * ONLY WHAT WAS READ, ONLY THREE COLOURS, ONCE A VIEW. Sent only when the
+   * page itself gave the primary — never what came from the code, the design
+   * system or memory, which the team already has — and only the primary,
+   * background and text: no pixels, no words, no path, nobody's name. The
+   * server checks the link and its origins as the audience check does, and
+   * keeps one record per app. A failure is nobody's business but ours.
+   */
+  function reportLook(b) {
+    if (destroyed || !key) return;
+    var body = JSON.stringify({
+      primary: b.primary,
+      background: b.background,
+      text: b.text || null,
+    });
+    if (body === reportedLook) return;
+    reportedLook = body;
+    try {
+      fetch(origin + "/api/idea/look/" + encodeURIComponent(key), {
+        method: "POST",
+        credentials: "omit",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: body,
+      }).catch(function () {});
+    } catch (e) {
+      /* An old browser without fetch options: the look still holds here. */
+    }
+  }
+
   function readTheme() {
     themeNow = matchTheme(document.body, themeChoice(), brand);
-    if (themeNow.brand) keepBrand(themeNow.brand);
+    if (themeNow.brand) {
+      keepBrand(themeNow.brand);
+      reportLook(themeNow.brand);
+    }
     if (themeNow.waiting) retryTheme();
     try {
       if (host) {
@@ -919,7 +976,11 @@ export function createIdeaWidget(options) {
     // colours" only where there are colours to use.
     var avoOn = themeChoice() === "avo";
     var siteLook = avoOn
-      ? matchTheme(document.body, codeChoice === "avo" ? null : codeChoice, brand).matched
+      ? matchTheme(
+          document.body,
+          withSystem(codeChoice === "avo" ? null : codeChoice, teamTheme),
+          brand,
+        ).matched
       : themeNow.matched;
     postToFrame({
       type: "avokaido:theme",

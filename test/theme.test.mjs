@@ -18,6 +18,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   THEME_KEYS,
+  systemTheme,
+  withSystem,
   derive,
   launcherFont,
   matchTheme,
@@ -324,9 +326,17 @@ describe("matchTheme on a Flutter page", () => {
     assertVars(m.vars, avo.cssVars, "avo");
   });
 
-  it("does not wait when the app's own theme already gives the primary", () => {
+  it("still waits for the page's background when the app's theme gives only the primary", () => {
     const m = matchTheme(flutterPage({ pixels: (n) => screen(n, []) }).root, themeOption({ primary: "#3451D1" }));
     assert.equal(m.from, "repo");
+    assert.equal(m.waiting, true);
+  });
+
+  it("does not wait when the app's theme gives the primary and the background", () => {
+    const m = matchTheme(
+      flutterPage({ pixels: (n) => screen(n, []) }).root,
+      themeOption({ primary: "#3451D1", background: "#FFFFFF" }),
+    );
     assert.equal(m.waiting, false);
   });
 
@@ -551,6 +561,58 @@ describe("one site, one look, from screen to screen", () => {
       const m = matchTheme(flutterPage({ pixels: (n) => screen(n, QUIET) }).root, null, bad);
       assert.equal(m.matched, false, JSON.stringify(bad));
     }
+  });
+});
+
+describe("the team's design system, from the audience check", () => {
+  const SYSTEM = {
+    primary: "#1b6b4a",
+    fontBody: "Roboto, sans-serif",
+    radius: 12,
+    app: "pak-sod-git/courtside",
+  };
+
+  it("is cleaned like a theme option and credited to the app's design system", () => {
+    const t = systemTheme(SYSTEM);
+    assert.deepEqual(t.primary, { v: "#1B6B4A", src: "pak-sod-git/courtside's design system, in Avokaido" });
+    assert.equal(t.fontBody.v, "Roboto, sans-serif");
+    assert.equal(t.radius.v, 12);
+    assert.equal(systemTheme({ ...SYSTEM, app: null }).primary.src, "all apps' design system, in Avokaido");
+  });
+
+  it("drops what a script tag could not say either", () => {
+    const t = systemTheme({ primary: "red", fontBody: "a;}body{x", radius: -3, background: { v: "#000000" } });
+    assert.equal(t, null);
+    assert.equal(systemTheme(null), null);
+    assert.equal(systemTheme("avo"), null);
+    assert.equal(systemTheme([]), null);
+  });
+
+  it("gives way to the app's own theme, value by value", () => {
+    const merged = withSystem(themeOption({ primary: "#3451D1" }), systemTheme(SYSTEM));
+    assert.equal(merged.primary.v, "#3451D1");
+    assert.equal(merged.fontBody.v, "Roboto, sans-serif");
+    assert.equal(withSystem("avo", systemTheme(SYSTEM)), "avo");
+    assert.equal(withSystem(null, null), null);
+    assert.equal(withSystem(null, systemTheme(SYSTEM)).radius.v, 12);
+  });
+
+  it("themes a Flutter app with its fonts and corners, and reads the rest off its screen", () => {
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, COURTSIDE) }).root, systemTheme(SYSTEM), null);
+    assert.equal(m.from, "repo");
+    assert.equal(m.vars["--w-bg"], "#0F1511");
+    assert.match(String(m.vars["--w-font-body"]), /Roboto/);
+    assert.equal(m.brand, null, "nothing to report: the primary came from the design system");
+  });
+
+  it("stands in with the remembered background while the app has not drawn", () => {
+    const m = matchTheme(
+      flutterPage({ pixels: (n) => screen(n, []) }).root,
+      systemTheme(SYSTEM),
+      { primary: "#005236", background: "#0F1511", text: "#C0C9C1" },
+    );
+    assert.equal(m.vars["--w-bg"], "#0F1511");
+    assert.equal(m.waiting, true);
   });
 });
 
