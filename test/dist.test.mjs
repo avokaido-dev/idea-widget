@@ -516,7 +516,7 @@ describe("the page's own header", () => {
 
 describe("looking like the site", () => {
   it("builds the theme matcher into the script", () => {
-    assert.match(dist, /function matchTheme\(root, repo\)/);
+    assert.match(dist, /function matchTheme\(root, repo, remembered\)/);
     assert.match(dist, /function derive\(found\)/);
   });
 
@@ -541,6 +541,12 @@ describe("looking like the site", () => {
   it("reads the page at mount and again on every open", () => {
     assert.match(core, /mount\(\);\s+\/\/ [^\n]*\n\s+readTheme\(\);/);
     assert.match(core, /function show\(at\) \{[\s\S]{0,400}readTheme\(\);/);
+  });
+
+  it("remembers the site's brand in the site's storage, and reads with it", () => {
+    assert.match(core, /var BRAND_KEY = "avokaido\.ideas\.brand";/);
+    assert.match(core, /themeNow = matchTheme\(document\.body, themeChoice\(\), brand\);\s+if \(themeNow\.brand\) keepBrand\(themeNow\.brand\);/);
+    assert.match(core, /function keepBrand\(next\) \{[\s\S]{0,400}localStorage\.setItem\(BRAND_KEY, JSON\.stringify\(next\)\)/);
   });
 
   it("sets the theme as custom properties, never as stylesheet text", () => {

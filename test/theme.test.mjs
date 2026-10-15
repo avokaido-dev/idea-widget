@@ -455,3 +455,102 @@ describe("the launcher's font", () => {
     );
   });
 });
+
+// Courtside's booking week on a 2400 × 1300 window: the same screen, drawn
+// smaller into the same 120 000-pixel sample, so the one avatar is 24 pixels
+// — under 0.03% of the sample, though it is the same 32-point avatar.
+const COURTSIDE_BIG = COURTSIDE.map(([hex, n]) => [hex, hex === "#005236" ? 24 : n]);
+const BIG_SCALE = Math.sqrt(120000 / (2400 * 1300));
+
+describe("a canvas app on a big window", () => {
+  it("still finds the brand that a smaller window finds", () => {
+    assert.equal(paletteOf(screen(120000, COURTSIDE_BIG), undefined, BIG_SCALE).primary.v, "#005236");
+  });
+
+  it("would have lost it to a floor counted in sample pixels only", () => {
+    assert.equal(paletteOf(screen(120000, COURTSIDE_BIG)).primary, undefined);
+  });
+
+  it("keeps the floor it had on a 1440 × 900 window", () => {
+    const scale = Math.sqrt(120000 / (1440 * 900));
+    const tiny = COURTSIDE.map(([hex, n]) => [hex, hex === "#005236" ? 30 : n]);
+    assert.equal(paletteOf(screen(120000, tiny), undefined, scale).primary, undefined);
+  });
+
+  it("still takes no scatter for a brand", () => {
+    const scatter = [];
+    for (let i = 0; i < 300; i++) {
+      scatter.push([`#${(0x203080 + i * 0x010203).toString(16).padStart(6, "0")}`, 3]);
+    }
+    const found = paletteOf(screen(120000, [["#FFFFFF", 0.9], ...scatter, ["#1B2033", 0.09]]), undefined, BIG_SCALE);
+    assert.equal(found.primary, undefined);
+  });
+});
+
+describe("one site, one look, from screen to screen", () => {
+  const BRAND = { primary: "#005236", background: "#0F1511", text: "#C0C9C1" };
+  const QUIET = COURTSIDE.filter(([hex]) => hex !== "#005236");
+
+  it("hands back what to remember when the brand is read off the page", () => {
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, COURTSIDE) }).root, null, null);
+    assert.deepEqual(m.brand, BRAND);
+  });
+
+  it("uses the remembered brand on a screen of the same site that shows none", () => {
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, QUIET) }).root, null, BRAND);
+    assert.equal(m.matched, true);
+    assert.equal(m.from, "page");
+    assert.equal(m.vars["--w-bg"], "#0F1511");
+    assert.equal(m.src.primary.text.startsWith("remembered from another screen of this site"), true);
+    assert.equal(m.waiting, false);
+    assert.equal(m.brand, null, "a remembered brand is not remembered again");
+  });
+
+  it("gives the quiet screen the same look the brand's screen got", () => {
+    const loud = matchTheme(flutterPage({ pixels: (n) => screen(n, COURTSIDE) }).root, null, null);
+    const quiet = matchTheme(flutterPage({ pixels: (n) => screen(n, QUIET) }).root, null, BRAND);
+    for (const name of ["--w-primary", "--w-bg", "--w-text", "--w-on-primary"]) {
+      assert.equal(quiet.vars[name], loud.vars[name], name);
+    }
+  });
+
+  it("does not use it on a different background", () => {
+    const light = [["#FFFFFF", 0.9], ["#1B2033", 0.09], ["#E5E7EB", "rest"]];
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, light) }).root, null, BRAND);
+    assert.equal(m.matched, false);
+  });
+
+  it("stands in while the app has not drawn, and still waits for the real read", () => {
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, []) }).root, null, BRAND);
+    assert.equal(m.matched, true);
+    assert.equal(m.vars["--w-bg"], "#0F1511");
+    assert.equal(m.waiting, true);
+  });
+
+  it("lets a brand read now win over the remembered one", () => {
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, COURTSIDE) }).root, null, { ...BRAND, primary: "#3451D1" });
+    assert.equal(m.src.primary.text, "the app's strongest colour, on its screen, deepened to pass 3:1");
+  });
+
+  it('is not used with theme "avo", and the app\'s own theme still wins', () => {
+    assert.equal(matchTheme(flutterPage({ pixels: (n) => screen(n, QUIET) }).root, "avo", BRAND).matched, false);
+    const m = matchTheme(flutterPage({ pixels: (n) => screen(n, QUIET) }).root, themeOption({ primary: "#3451D1" }), BRAND);
+    assert.equal(m.from, "repo");
+    assert.equal(m.brand, null);
+  });
+
+  it("takes only the exact shape it keeps from storage", () => {
+    for (const bad of [
+      "#005236",
+      { primary: "green", background: "#0F1511" },
+      { primary: "rgb(0, 82, 54)", background: "#0F1511" },
+      { primary: "#005236" },
+      { primary: "#808080", background: "#0F1511" },
+      { primary: "#005236;}", background: "#0F1511" },
+    ]) {
+      const m = matchTheme(flutterPage({ pixels: (n) => screen(n, QUIET) }).root, null, bad);
+      assert.equal(m.matched, false, JSON.stringify(bad));
+    }
+  });
+});
+
