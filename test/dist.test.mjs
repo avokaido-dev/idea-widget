@@ -497,10 +497,12 @@ describe("the page's own header", () => {
     assert.match(core, /type === "avokaido:x"\) \{[\s\S]{0,120}close\("button"\);/);
   });
 
-  it("moves by the page's header without taking the frame's pointer events", () => {
-    // The drag is coming FROM the frame; taking them away would end it.
+  it("moves by the page's header, taking the frame's pointer only to follow it here", () => {
+    // From a chat that says nothing of the press, the drag comes FROM the
+    // frame, and taking its pointer away would end it: only `.taken` — set
+    // when this page follows the pointer itself — does.
     assert.equal(/\.dock\.moving iframe/.test(dist), false);
-    assert.match(core, /pageDrag = \{ left: box\.left, top: box\.top \};/);
+    assert.match(core, /pageDrag = \{ left: box\.left, top: box\.top, following: false \};/);
     assert.match(core, /placeAt\(overlay, pageDrag\.left \+ dx, pageDrag\.top \+ dy\)/);
   });
 
@@ -1000,5 +1002,24 @@ describe("which button: the code's, the team's, the person's", () => {
   it("tells the chat which button is on, and none where there is none", () => {
     assert.match(core, /launcher: shape\(\) === "none" \? null : shape\(\),/);
     assert.match(core, /launcherLabel: String\(label\)\.slice\(0, 60\),/);
+  });
+});
+
+describe("moving the box by the page's own header", () => {
+  it("takes the pointer over from the frame when the press is known", () => {
+    assert.match(core, /followPointer\(pageDrag, sx, sy\);/);
+    assert.match(dist, /\.dock\.taken iframe \{ pointer-events: none \}/);
+  });
+
+  it("ignores the frame's late copies once this page follows the pointer", () => {
+    assert.match(core, /if \(pageDrag\.following\) return;/);
+  });
+
+  it("still moves by the frame's reports where the page hears nothing", () => {
+    assert.match(core, /if \(sane && !stuck\) placeAt\(overlay, pageDrag\.left \+ dx, pageDrag\.top \+ dy\);/);
+  });
+
+  it("hands the pointer back to the frame however the drag ends", () => {
+    assert.match(core, /overlay\.classList\.remove\("moving", "taken"\);[\s\S]*?overlay\.classList\.remove\("moving", "taken"\);/);
   });
 });

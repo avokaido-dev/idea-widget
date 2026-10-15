@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.17.1
+
+**Moving the box by its header follows the pointer smoothly.** The chat
+draws its own header, so it measured the drag and sent every step to this
+page — and its main thread is busy drawing, so the steps came late and in
+bursts (on Courtside, gaps of 35–65 ms where 19 were sent). The box lagged
+and stuttered. Now, when the chat says where the press was (`sx`, `sy` on
+`avokaido:grip` `start`), the frame stops taking the pointer for the drag
+and this page follows it directly, as it does for the corner resize. A
+browser that keeps the pointer with the frame still moves the box by the
+frame's reports.
+
 ## 1.17.0
 
 **The round button is the Avokaido mark, and it fills as the chat
