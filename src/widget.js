@@ -409,6 +409,15 @@ export function createIdeaWidget(options) {
   var LOOK_KEY = "avokaido.ideas.look";
   /** This person's own choice, `"avo"` or `"site"`, or null for none. */
   var personalLook = rememberedLook();
+  /**
+   * The site's brand as last read off one of its screens — `{ primary,
+   * background, text }` — kept in this site's storage ([BRAND_KEY]) so a
+   * quieter screen, or a refresh before a canvas app has drawn, keeps the
+   * site's look rather than falling back to Avo's (see `matchTheme`). Three
+   * colours, nothing else of the page.
+   */
+  var BRAND_KEY = "avokaido.ideas.brand";
+  var brand = rememberedBrand();
   var themeNow = null;
   var THEME_RETRIES = [500, 1000, 2000, 4000, 8000];
   var themeRetries = 0;
@@ -795,8 +804,36 @@ export function createIdeaWidget(options) {
     tellTheme();
   }
 
+  /** The site's remembered brand, or null. Storage can refuse: then none. */
+  function rememberedBrand() {
+    try {
+      return JSON.parse(localStorage.getItem(BRAND_KEY) || "null");
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** Keeps a freshly read brand, for this visit and the next. */
+  function keepBrand(next) {
+    if (
+      brand &&
+      brand.primary === next.primary &&
+      brand.background === next.background &&
+      brand.text === next.text
+    ) {
+      return;
+    }
+    brand = next;
+    try {
+      localStorage.setItem(BRAND_KEY, JSON.stringify(next));
+    } catch (e) {
+      /* Private mode, a full quota: it holds for this visit only. */
+    }
+  }
+
   function readTheme() {
-    themeNow = matchTheme(document.body, themeChoice());
+    themeNow = matchTheme(document.body, themeChoice(), brand);
+    if (themeNow.brand) keepBrand(themeNow.brand);
     if (themeNow.waiting) retryTheme();
     try {
       if (host) {
@@ -882,7 +919,7 @@ export function createIdeaWidget(options) {
     // colours" only where there are colours to use.
     var avoOn = themeChoice() === "avo";
     var siteLook = avoOn
-      ? matchTheme(document.body, codeChoice === "avo" ? null : codeChoice).matched
+      ? matchTheme(document.body, codeChoice === "avo" ? null : codeChoice, brand).matched
       : themeNow.matched;
     postToFrame({
       type: "avokaido:theme",

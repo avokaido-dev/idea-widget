@@ -358,7 +358,14 @@ most-drawn colour that reads on the background is the text. Fonts, size and
 corners are not in the pixels, so those stay Avokaido's. This read happens on
 load, when Flutter draws its first frame, and on every open. Only those three
 colours leave the read; the pixels are dropped. Mark a page with
-`data-render="canvas"` on `<body>` if the widget does not spot it. To set
+`data-render="canvas"` on `<body>` if the widget does not spot it.
+
+**One site, one look.** A screen with only a little of your colour on it — a
+calendar in greys with one small avatar — may have no colour strong enough
+to count as a brand. So the widget remembers the brand it read on another of
+your screens, in your site's own storage (`avokaido.ideas.brand`, three
+colours), and uses it on a screen with the same background and no brand of
+its own, and while an app is still loading after a refresh. To set
 exactly what is used, give your theme:
 
 ```html

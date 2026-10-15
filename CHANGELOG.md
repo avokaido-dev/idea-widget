@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.15.1
+
+**A Flutter app keeps its look from screen to screen, and after a refresh.**
+On Courtside's booking week the only colour strong enough for a brand is one
+small avatar; the rest is sage. On a big window that avatar shrank under the
+read's floor, the read found no brand, and the whole match — the dark
+background and light text it had found too — gave way to Avokaido's cream.
+Refreshing on that screen did it every time; arriving from the sign-in
+screen, which is full of the green, did not.
+
+- **The brand floor is on the real screen.** A colour counts as the brand
+  when it covers 0.03% of the read's sample *or* about a 20 × 20 badge of the
+  window, whichever is less. Up to about 1440 × 900 nothing changes; on
+  bigger windows a small brand mark is no longer lost.
+- **The site's brand is remembered.** A brand read off one screen is kept in
+  that site's storage (`avokaido.ideas.brand`: the primary, background and
+  text, three colours and nothing else). A later screen with the same
+  background and no brand of its own uses it, and while a canvas app has not
+  drawn yet after a refresh the remembered look stands in instead of Avo's
+  green — the read that follows still happens and wins. A different
+  background (a switch to light mode) is a different look, and memory is not
+  used.
+
 ## 1.15.0
 
 **Each person can switch the box between the site's colours and

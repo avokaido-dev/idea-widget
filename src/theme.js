@@ -225,6 +225,17 @@ export function pageFacts(root) {
 var SAMPLE_PIXELS = 120000;
 
 /**
+ * THE SMALLEST BRAND, ON THE REAL SCREEN: about a 20 × 20 badge. The sample
+ * is a fixed size, so on a big window every shape in it is smaller — on a
+ * 2400 × 1300 window an avatar that is 60 sample pixels at 1440 × 900 is 24 —
+ * and a floor counted only in sample pixels turns a screen's one brand mark
+ * into nothing as the window grows. A colour passes when it covers 0.03% of
+ * the sample (the floor up to about 1440 × 900) or this many CSS pixels,
+ * whichever is less.
+ */
+var BRAND_AREA = 400;
+
+/**
  * What an app drawn in a canvas shows, from its pixels: `{ primary, text,
  * background }`, each `{ v, src }` and each only when found — or null when
  * the canvas has not been drawn yet.
@@ -243,7 +254,9 @@ var SAMPLE_PIXELS = 120000;
  * neutral colour covering at least 15% — the "largest neutral panel" of
  * `readPage`. The primary is the strongest colour, colour strength times the
  * square root of its area, as for a button, with the same 0.06 floor, so a
- * grey or a sage that is nearly grey is never a brand. The text is the
+ * grey or a sage that is nearly grey is never a brand — and at least a small
+ * badge's worth of the screen ([BRAND_AREA], `scale` being sample pixels per
+ * CSS pixel), so the scatter at the edges of shapes is not one either. The text is the
  * most-drawn colour under that floor that holds 4.5:1 on that background —
  * under it, because a filled button outdraws the words on a screen, and a
  * colour strong enough to be a brand is not what an app writes in. Fonts,
@@ -253,7 +266,7 @@ var SAMPLE_PIXELS = 120000;
  * opaque — an app still loading, a WebGL canvas that hands back an empty
  * picture — gives null, and Avo default stands until the next read.
  */
-export function paletteOf(data, covered) {
+export function paletteOf(data, covered, scale) {
   if (!data || !data.length) return null;
   var counts = new Map();
   var n = 0;
@@ -283,7 +296,9 @@ export function paletteOf(data, covered) {
     }
   }
   var best = null;
-  var minBrand = Math.max(4, n * 0.0003);
+  var minBrand = n * 0.0003;
+  if (scale > 0) minBrand = Math.min(minBrand, BRAND_AREA * scale * scale);
+  minBrand = Math.max(4, minBrand);
   for (j = 0; j < cols.length && cols[j].n >= minBrand; j++) {
     var ch = chromaOf(cols[j]);
     if (ch < 0.06) continue;
@@ -385,7 +400,7 @@ export function readCanvas(doc) {
       covered = Math.max(covered, cw * chh * k * k);
     }
     if (!covered) return { readable: false, waiting: true };
-    var found = paletteOf(ctx.getImageData(0, 0, w, h).data, covered);
+    var found = paletteOf(ctx.getImageData(0, 0, w, h).data, covered, k);
     if (!found) return { readable: false, waiting: true };
     found.readable = true;
     return found;
@@ -679,29 +694,35 @@ export function toCssVars(t) {
 }
 
 /**
- * The theme for the widget right now: `{ vars, matched, from, src, waiting }`.
+ * The theme for the widget right now: `{ vars, matched, from, src, waiting,
+ * brand }`.
  *
  * `from` says what themed it — `"repo"` when the primary came from the app's
  * code, `"page"` when it was read off the page, `"avo"` when nothing was
  * found and Avo default stands. `src` is `derive`'s, role by role. `waiting`
- * is true when Avo default stands only because a canvas app has not drawn
- * its screen yet (see `readCanvas`) — worth reading again soon.
+ * is true when Avo default — or a remembered look — stands only because a
+ * canvas app has not drawn its screen yet (see `readCanvas`) — worth reading
+ * again soon. `brand` is what to remember of this read for the next one, or
+ * null (see `fillFromBrand`).
  *
  * `repo` is the `theme` option as `themeOption` leaves it: read values from
  * the app's code, which win over the page; `"avo"`, which switches matching
- * off; or null.
+ * off; or null. `remembered` is a `brand` from an earlier read of this site,
+ * or null.
  *
  * NEVER THROWS. A host page whose styles cannot be read — a browser quirk, a
  * getter somebody overrode, a document mid-teardown — gets Avo default, not a
  * widget that failed to open.
  */
-export function matchTheme(root, repo) {
+export function matchTheme(root, repo, remembered) {
   try {
     if (repo === "avo") return themeResult(derive({}), {});
     var page = readPage(root);
     var found = merge(page, repo && typeof repo === "object" ? repo : null);
+    var waiting = Boolean(page && page.waiting);
+    var kept = fillFromBrand(found, page, brandOf(remembered), waiting);
     var theme = derive(found);
-    return themeResult(theme, found, Boolean(page && page.waiting) && !theme.matched);
+    return themeResult(theme, found, waiting && (!theme.matched || kept));
   } catch (err) {
     if (typeof console !== "undefined" && console.warn) {
       console.warn("[avokaido] could not read the page's theme; using Avo default", err);
@@ -717,6 +738,84 @@ function themeResult(theme, found, waiting) {
     from: theme.matched ? found.primary.from : "avo",
     src: theme.src,
     waiting: Boolean(waiting),
+    brand: brandToKeep(found),
+  };
+}
+
+var REMEMBERED = "remembered from another screen of this site";
+
+/**
+ * A remembered brand, cleaned: `{ primary, background, text }` as #RRGGBB
+ * (text may be null), or null. It comes back out of the host page's storage,
+ * which anything on that page can write, so it is taken only in the exact
+ * shape it was kept in: six-digit hex colours, and a primary that is a colour.
+ */
+function brandOf(b) {
+  if (!b || typeof b !== "object") return null;
+  var hex = function (v) {
+    return typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v.toUpperCase() : null;
+  };
+  var p = hex(b.primary);
+  var bg = hex(b.background);
+  if (!p || !bg || chromaOf(p) < 0.06) return null;
+  return { primary: p, background: bg, text: hex(b.text) };
+}
+
+/** The same background, give or take what a resize blends into it. */
+function sameColour(a, b) {
+  a = colourOf(a);
+  b = colourOf(b);
+  return (
+    Math.abs(a.r - b.r) <= 8 && Math.abs(a.g - b.g) <= 8 && Math.abs(a.b - b.b) <= 8
+  );
+}
+
+/**
+ * ONE SITE, ONE LOOK, FROM SCREEN TO SCREEN. A brand read off one screen of a
+ * site is remembered (`brand`, kept by the widget in that site's own storage),
+ * and fills in for a later read that found none:
+ *
+ * - The page shows the SAME BACKGROUND but no colour strong enough for a
+ *   brand — Courtside's booking week, where the green is one small avatar and
+ *   everything else is sage — so it is the same site on a quieter screen.
+ *   The primary comes from memory; everything else is read now.
+ * - The page has NOT DRAWN YET (`waiting`): a Flutter app after a refresh.
+ *   The remembered look stands until the read that follows finds the real
+ *   one, rather than Avo's green flashing first. It stays `waiting`, so that
+ *   read still happens.
+ *
+ * A different background is a different look — a site switched to light
+ * mode — and memory is not used: half a match is still worse than none.
+ * Returns whether memory filled anything.
+ */
+function fillFromBrand(found, page, brand, waiting) {
+  if (!brand || found.primary) return false;
+  if (waiting) {
+    found.primary = { v: brand.primary, src: REMEMBERED, from: "page" };
+    if (!found.background) found.background = { v: brand.background, src: REMEMBERED, from: "page" };
+    if (!found.text && brand.text) found.text = { v: brand.text, src: REMEMBERED, from: "page" };
+    return true;
+  }
+  if (!page || !page.readable || !found.background || found.background.from !== "page") return false;
+  if (!sameColour(found.background.v, brand.background)) return false;
+  found.primary = { v: brand.primary, src: REMEMBERED, from: "page" };
+  return true;
+}
+
+/**
+ * What to remember of this read: the primary and background read off the
+ * page now (and its text), or null — nothing from the app's code, which is
+ * there on every screen anyway, and nothing that was itself remembered.
+ */
+function brandToKeep(found) {
+  var p = found.primary;
+  var bg = found.background;
+  if (!p || !bg || p.from !== "page" || bg.from !== "page") return null;
+  if (p.src === REMEMBERED || bg.src === REMEMBERED) return null;
+  return {
+    primary: p.v,
+    background: bg.v,
+    text: found.text && found.text.from === "page" ? found.text.v : null,
   };
 }
 
