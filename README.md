@@ -333,6 +333,15 @@ your fonts, your text size and your corner radius. Everything else — hover
 colours, borders, the soft fill behind your own messages — is worked out from
 those, with contrast checks, so text stays readable on whatever you chose.
 
+**Your design system comes first.** If your team saved one in Avokaido
+(Settings → Design system — for this app, or for all apps), the box takes its
+primary, background and text colours, its fonts and its corners from there:
+the tokens named like `--primary`, `--background`, `--text`, `--font-body` and
+`--radius` (the same names Avo Monitor's scan and Cloud Runner builds go by).
+It arrives with the check the widget makes before showing its button, so the
+launcher is drawn in it from the start. What the design system leaves out is
+read off the page, as below.
+
 What it reads, in this order:
 
 - **The primary colour** from a page variable (`--brand`, `--primary`,
@@ -688,9 +697,17 @@ to a link limited to certain visitors: as the `Authorization` header of that
 one check, verified and dropped like the rest. Never a cookie
 (`credentials: "omit"`), never in a URL.
 
-**The look it matched — to the chat in the box only**, so the chat can draw
+**The look it matched — to the chat in the box**, so the chat can draw
 in your colours: the colours, fonts, size and radius it worked out, and
-whether each was read, worked out or Avo's default. Never the words on your
+whether each was read, worked out or Avo's default.
+
+**Three colours it read off your page — to your team**, when your page gave
+the primary rather than your design system: the primary, background and text
+it settled on, as hex, once a page view (`POST /api/idea/look/<key>`, checked
+against the link's origins like the audience check). They show in your
+Settings → Design system as "Read off the site", so whoever looks after your
+design system can keep them. Never the pixels, the words, the path or who is
+looking. Never the words on your
 page — a button's label or a heading is read only to find a colour, and stays
 on your page. It is posted to the chat's frame on our origin and is not put in
 a URL. With `data-theme="avo"` nothing is read off your page at all.

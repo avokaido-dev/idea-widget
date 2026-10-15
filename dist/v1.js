@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.15.1 — one script tag on your page.
+ * Avokaido idea widget 1.16.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -738,7 +738,10 @@ function matchTheme(root, repo, remembered) {
     var waiting = Boolean(page && page.waiting);
     var kept = fillFromBrand(found, page, brandOf(remembered), waiting);
     var theme = derive(found);
-    return themeResult(theme, found, waiting && (!theme.matched || kept));
+    // A canvas not drawn yet is read again while the look still leans on it:
+    // nothing matched, memory standing in, or a primary from the code or the
+    // design system with the page's own background still to come.
+    return themeResult(theme, found, waiting && (!theme.matched || kept || !found.background));
   } catch (err) {
     if (typeof console !== "undefined" && console.warn) {
       console.warn("[avokaido] could not read the page's theme; using Avo default", err);
@@ -796,22 +799,30 @@ function sameColour(a, b) {
  *   everything else is sage — so it is the same site on a quieter screen.
  *   The primary comes from memory; everything else is read now.
  * - The page has NOT DRAWN YET (`waiting`): a Flutter app after a refresh.
- *   The remembered look stands until the read that follows finds the real
- *   one, rather than Avo's green flashing first. It stays `waiting`, so that
- *   read still happens.
+ *   The remembered look stands — every role the code or the design system
+ *   did not give — until the read that follows finds the real one, rather
+ *   than Avo's green flashing first. It stays `waiting`, so that read still
+ *   happens.
  *
  * A different background is a different look — a site switched to light
  * mode — and memory is not used: half a match is still worse than none.
  * Returns whether memory filled anything.
  */
 function fillFromBrand(found, page, brand, waiting) {
-  if (!brand || found.primary) return false;
+  if (!brand) return false;
   if (waiting) {
-    found.primary = { v: brand.primary, src: REMEMBERED, from: "page" };
-    if (!found.background) found.background = { v: brand.background, src: REMEMBERED, from: "page" };
-    if (!found.text && brand.text) found.text = { v: brand.text, src: REMEMBERED, from: "page" };
-    return true;
+    var filled = false;
+    var fill = function (k, v) {
+      if (found[k] || !v) return;
+      found[k] = { v: v, src: REMEMBERED, from: "page" };
+      filled = true;
+    };
+    fill("primary", brand.primary);
+    fill("background", brand.background);
+    fill("text", brand.text);
+    return filled;
   }
+  if (found.primary) return false;
   if (!page || !page.readable || !found.background || found.background.from !== "page") return false;
   if (!sameColour(found.background.v, brand.background)) return false;
   found.primary = { v: brand.primary, src: REMEMBERED, from: "page" };
@@ -875,6 +886,51 @@ function themeOption(value) {
     any = true;
   });
   return any ? out : null;
+}
+
+/**
+ * The design system saved in Avokaido for the link's app, as the audience
+ * check hands it over — `{ primary, background, text, fontBody, fontHead,
+ * radius, app }`, `app` null for the design system for all apps — cleaned
+ * like a `theme` option and credited to it; or null.
+ *
+ * THE TEAM'S DESIGN SYSTEM, BETWEEN THE CODE AND THE PAGE. It is what the
+ * team saved in Settings → Design system, the one Cloud Runner builds read,
+ * so it outranks what one screen of the page happens to show — fonts and
+ * corners included, which a canvas app's pixels never give. A `theme` in
+ * the app's own code outranks it, value by value (`withSystem`). It comes
+ * from our server, but through a public response, so every value is held
+ * to the same rules as one written in a page's script tag.
+ */
+function systemTheme(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  var app =
+    typeof value.app === "string" && /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(value.app)
+      ? value.app
+      : null;
+  var src = (app ? app + "'s" : "all apps'") + " design system, in Avokaido";
+  var boxed = {};
+  THEME_KEYS.forEach(function (k) {
+    var v = value[k];
+    if (v != null && typeof v !== "object") boxed[k] = { v: v, src: src };
+  });
+  return themeOption(boxed);
+}
+
+/**
+ * The theme a read uses when the team has a design system: the app's code
+ * ([code], a cleaned `theme` option) over the design system ([system]),
+ * value by value. `"avo"` stays `"avo"`.
+ */
+function withSystem(code, system) {
+  if (!system || code === "avo") return code;
+  if (!code) return system;
+  var out = {};
+  THEME_KEYS.forEach(function (k) {
+    if (code[k]) out[k] = code[k];
+    else if (system[k]) out[k] = system[k];
+  });
+  return out;
 }
 
 function cleanThemeValue(k, v) {
@@ -1324,9 +1380,15 @@ function createIdeaWidget(options) {
    * what the app was written to look like, where one screen of the page is
    * only what it happens to show. `"avo"` switches the reading off.
    *
-   * AND THE TEAM'S CHOICE WINS OVER BOTH: a link set to Avokaido's look in
-   * the console (`look: "avo"` from the server, see the audience check) is
-   * Avo default whatever the page or the code says.
+   * THE TEAM'S DESIGN SYSTEM SITS BETWEEN THEM: the one saved in Settings →
+   * Design system for the link's app (or all apps'), which the audience check
+   * hands over as `theme` ([teamTheme]). It outranks the page — fonts and
+   * corners too, which a canvas app's pixels never give — and the app's own
+   * `theme` outranks it, value by value.
+   *
+   * AND THE TEAM'S CHOICE WINS OVER ALL THREE: a link set to Avokaido's look
+   * in the console (`look: "avo"` from the server, see the audience check) is
+   * Avo default whatever the page, the code or the design system says.
    *
    * AND EACH PERSON'S OWN CHOICE WINS FOR THEM: the box's More menu says
    * "Use Avokaido's colours" or "Use this site's colours" (`avokaido:look`
@@ -1348,6 +1410,16 @@ function createIdeaWidget(options) {
   var codeChoice = themeOption(opts.theme);
   /** `"avo"` when the team set the link to Avokaido's look, else null. */
   var teamLook = null;
+  /** The team's design system for this link's app, cleaned, or null. */
+  var teamTheme = null;
+  /** The last look reported to `POST /look`, so a page view sends it once. */
+  var reportedLook = "";
+  /**
+   * Whether the audience check has answered with the button shown. Until it
+   * has, the team's design system may still be on its way, and a look read
+   * off the page meanwhile is not yet the look the box wears.
+   */
+  var audienceShown = false;
   var LOOK_KEY = "avokaido.ideas.look";
   /** This person's own choice, `"avo"` or `"site"`, or null for none. */
   var personalLook = rememberedLook();
@@ -1612,10 +1684,23 @@ function createIdeaWidget(options) {
       // without a release of its app. Anything else, a missing field
       // included, leaves the look as it is. Here, before the button is first
       // shown (`settle`), so it is never seen in the site's colours first.
+      // THE TEAM'S DESIGN SYSTEM, the same way and at the same moment: what
+      // Settings → Design system holds for this link's app, so the launcher
+      // is first drawn in it rather than in what one screen happens to show.
+      var lookChanged = false;
       if (body.look === "avo" && teamLook !== "avo") {
         teamLook = "avo";
-        if (host) readTheme();
+        lookChanged = true;
       }
+      var system = systemTheme(body.theme);
+      if (system && JSON.stringify(system) !== JSON.stringify(teamTheme)) {
+        teamTheme = system;
+        lookChanged = true;
+      }
+      if (lookChanged && host) readTheme();
+      // Now the look the box wears is known: report it if the page gave it.
+      audienceShown = true;
+      if (themeNow && themeNow.brand) reportLook(themeNow.brand);
       if (rules.paths.length > 0) watchRoute();
       checkVisitor();
     })
@@ -1714,9 +1799,9 @@ function createIdeaWidget(options) {
   function themeChoice() {
     var code = codeChoice === "avo" ? null : codeChoice;
     if (personalLook === "avo") return "avo";
-    if (personalLook === "site") return code;
+    if (personalLook === "site") return withSystem(code, teamTheme);
     if (teamLook === "avo") return "avo";
-    return codeChoice;
+    return withSystem(codeChoice, teamTheme);
   }
 
   /** The person's remembered look, or null. Storage can refuse: then none. */
@@ -1773,9 +1858,49 @@ function createIdeaWidget(options) {
     }
   }
 
+  /**
+   * Tells Avokaido the colours this page was matched to, for the team's
+   * Settings → Design system ("Read off the site"), where they can be made
+   * the app's design system with one press.
+   *
+   * ONLY WHAT WAS READ, ONLY THREE COLOURS, ONCE A VIEW. Sent only when the
+   * page itself gave the primary — never what came from the code, the design
+   * system or memory, which the team already has — and only once the
+   * audience check has answered with the button shown, because until then
+   * the design system may be on its way and the page's read is not yet the
+   * look the box wears ([audienceShown]). Only the primary,
+   * background and text: no pixels, no words, no path, nobody's name. The
+   * server checks the link and its origins as the audience check does, and
+   * keeps one record per app. A failure is nobody's business but ours.
+   */
+  function reportLook(b) {
+    if (destroyed || !key || !audienceShown) return;
+    var body = JSON.stringify({
+      primary: b.primary,
+      background: b.background,
+      text: b.text || null,
+    });
+    if (body === reportedLook) return;
+    reportedLook = body;
+    try {
+      fetch(origin + "/api/idea/look/" + encodeURIComponent(key), {
+        method: "POST",
+        credentials: "omit",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: body,
+      }).catch(function () {});
+    } catch (e) {
+      /* An old browser without fetch options: the look still holds here. */
+    }
+  }
+
   function readTheme() {
     themeNow = matchTheme(document.body, themeChoice(), brand);
-    if (themeNow.brand) keepBrand(themeNow.brand);
+    if (themeNow.brand) {
+      keepBrand(themeNow.brand);
+      reportLook(themeNow.brand);
+    }
     if (themeNow.waiting) retryTheme();
     try {
       if (host) {
@@ -1861,7 +1986,11 @@ function createIdeaWidget(options) {
     // colours" only where there are colours to use.
     var avoOn = themeChoice() === "avo";
     var siteLook = avoOn
-      ? matchTheme(document.body, codeChoice === "avo" ? null : codeChoice, brand).matched
+      ? matchTheme(
+          document.body,
+          withSystem(codeChoice === "avo" ? null : codeChoice, teamTheme),
+          brand,
+        ).matched
       : themeNow.matched;
     postToFrame({
       type: "avokaido:theme",

@@ -545,8 +545,21 @@ describe("looking like the site", () => {
 
   it("remembers the site's brand in the site's storage, and reads with it", () => {
     assert.match(core, /var BRAND_KEY = "avokaido\.ideas\.brand";/);
-    assert.match(core, /themeNow = matchTheme\(document\.body, themeChoice\(\), brand\);\s+if \(themeNow\.brand\) keepBrand\(themeNow\.brand\);/);
+    assert.match(core, /themeNow = matchTheme\(document\.body, themeChoice\(\), brand\);\s+if \(themeNow\.brand\) \{\s+keepBrand\(themeNow\.brand\);\s+reportLook\(themeNow\.brand\);/);
     assert.match(core, /function keepBrand\(next\) \{[\s\S]{0,400}localStorage\.setItem\(BRAND_KEY, JSON\.stringify\(next\)\)/);
+  });
+
+  it("takes the team's design system from the audience check, before the button shows", () => {
+    assert.match(core, /var system = systemTheme\(body\.theme\);\s+if \(system && JSON\.stringify\(system\) !== JSON\.stringify\(teamTheme\)\) \{\s+teamTheme = system;/);
+    assert.match(core, /if \(lookChanged && host\) readTheme\(\);[\s\S]{0,240}if \(rules\.paths\.length > 0\) watchRoute\(\);/);
+  });
+
+  it("reports only a look read off the page, three colours, once a view, with no credentials", () => {
+    assert.match(core, /function reportLook\(b\) \{[\s\S]{0,120}if \(destroyed \|\| !key \|\| !audienceShown\) return;/);
+    // Not before the audience check has said what the box wears.
+    assert.match(core, /audienceShown = true;\s+if \(themeNow && themeNow\.brand\) reportLook\(themeNow\.brand\);/);
+    assert.match(core, /primary: b\.primary,\s+background: b\.background,\s+text: b\.text \|\| null,\s+\}\);\s+if \(body === reportedLook\) return;/);
+    assert.match(core, /fetch\(origin \+ "\/api\/idea\/look\/" \+ encodeURIComponent\(key\), \{\s+method: "POST",\s+credentials: "omit",/);
   });
 
   it("sets the theme as custom properties, never as stylesheet text", () => {
@@ -572,10 +585,11 @@ describe("looking like the site", () => {
     assert.match(core, /if \(look !== "avo" && look !== "site"\) return;/);
     assert.match(core, /localStorage\.setItem\(LOOK_KEY, look\)/);
     assert.match(core, /var LOOK_KEY = "avokaido\.ideas\.look";/);
-    // Their choice first, then the team's, then the app's code.
+    // Their choice first, then the team's, then the app's code over the
+    // team's design system.
     assert.match(
       core,
-      /if \(personalLook === "avo"\) return "avo";\s+if \(personalLook === "site"\) return code;\s+if \(teamLook === "avo"\) return "avo";\s+return codeChoice;/,
+      /if \(personalLook === "avo"\) return "avo";\s+if \(personalLook === "site"\) return withSystem\(code, teamTheme\);\s+if \(teamLook === "avo"\) return "avo";\s+return withSystem\(codeChoice, teamTheme\);/,
     );
     // The chat is told which look is on, and whether the site's exists.
     assert.match(core, /look: avoOn \? "avo" : "site",\s+siteLook: siteLook,/);

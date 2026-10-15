@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.16.0
+
+**The box wears the design system your team saved in Avokaido.** Until now
+it only read the page — on a Flutter app, three colours off the screen, with
+Avokaido's fonts and corners. Now the audience check also answers `theme`:
+the primary, background, text, fonts and corners from Settings → Design
+system for the link's app (or for all apps), worked out from the saved tokens
+by the server.
+
+- Order: the person's choice, then the team's `look`, then the app's own
+  `theme` / `data-theme`, **then the design system**, then the page. The code
+  outranks the design system value by value; the page fills what neither
+  gives. Fonts and corners now reach a canvas app's box.
+- A canvas app is still read again while it has not drawn and the look still
+  leans on it — including when the code or the design system gave a primary
+  but not the background. The remembered brand stands in for every role they
+  leave out until then.
+- **The colours read off the page are reported**, so the team sees them in
+  Settings ("Read off the site") and can keep them with one press:
+  `POST /api/idea/look/<key>` with `{ primary, background, text }`, only
+  when the page itself gave the primary, once per page view, no credentials.
+- `systemTheme` and `withSystem` in `src/theme.js`.
+
 ## 1.15.1
 
 **A Flutter app keeps its look from screen to screen, and after a refresh.**
