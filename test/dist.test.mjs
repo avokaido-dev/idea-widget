@@ -551,11 +551,13 @@ describe("looking like the site", () => {
 
   it("takes the team's design system from the audience check, before the button shows", () => {
     assert.match(core, /var system = systemTheme\(body\.theme\);\s+if \(system && JSON\.stringify\(system\) !== JSON\.stringify\(teamTheme\)\) \{\s+teamTheme = system;/);
-    assert.match(core, /if \(lookChanged && host\) readTheme\(\);\s+if \(rules\.paths\.length > 0\) watchRoute\(\);/);
+    assert.match(core, /if \(lookChanged && host\) readTheme\(\);[\s\S]{0,240}if \(rules\.paths\.length > 0\) watchRoute\(\);/);
   });
 
   it("reports only a look read off the page, three colours, once a view, with no credentials", () => {
-    assert.match(core, /function reportLook\(b\) \{[\s\S]{0,120}if \(destroyed \|\| !key\) return;/);
+    assert.match(core, /function reportLook\(b\) \{[\s\S]{0,120}if \(destroyed \|\| !key \|\| !audienceShown\) return;/);
+    // Not before the audience check has said what the box wears.
+    assert.match(core, /audienceShown = true;\s+if \(themeNow && themeNow\.brand\) reportLook\(themeNow\.brand\);/);
     assert.match(core, /primary: b\.primary,\s+background: b\.background,\s+text: b\.text \|\| null,\s+\}\);\s+if \(body === reportedLook\) return;/);
     assert.match(core, /fetch\(origin \+ "\/api\/idea\/look\/" \+ encodeURIComponent\(key\), \{\s+method: "POST",\s+credentials: "omit",/);
   });

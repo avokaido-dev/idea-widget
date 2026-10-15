@@ -416,6 +416,12 @@ export function createIdeaWidget(options) {
   var teamTheme = null;
   /** The last look reported to `POST /look`, so a page view sends it once. */
   var reportedLook = "";
+  /**
+   * Whether the audience check has answered with the button shown. Until it
+   * has, the team's design system may still be on its way, and a look read
+   * off the page meanwhile is not yet the look the box wears.
+   */
+  var audienceShown = false;
   var LOOK_KEY = "avokaido.ideas.look";
   /** This person's own choice, `"avo"` or `"site"`, or null for none. */
   var personalLook = rememberedLook();
@@ -694,6 +700,9 @@ export function createIdeaWidget(options) {
         lookChanged = true;
       }
       if (lookChanged && host) readTheme();
+      // Now the look the box wears is known: report it if the page gave it.
+      audienceShown = true;
+      if (themeNow && themeNow.brand) reportLook(themeNow.brand);
       if (rules.paths.length > 0) watchRoute();
       checkVisitor();
     })
@@ -858,13 +867,16 @@ export function createIdeaWidget(options) {
    *
    * ONLY WHAT WAS READ, ONLY THREE COLOURS, ONCE A VIEW. Sent only when the
    * page itself gave the primary — never what came from the code, the design
-   * system or memory, which the team already has — and only the primary,
+   * system or memory, which the team already has — and only once the
+   * audience check has answered with the button shown, because until then
+   * the design system may be on its way and the page's read is not yet the
+   * look the box wears ([audienceShown]). Only the primary,
    * background and text: no pixels, no words, no path, nobody's name. The
    * server checks the link and its origins as the audience check does, and
    * keeps one record per app. A failure is nobody's business but ours.
    */
   function reportLook(b) {
-    if (destroyed || !key) return;
+    if (destroyed || !key || !audienceShown) return;
     var body = JSON.stringify({
       primary: b.primary,
       background: b.background,
