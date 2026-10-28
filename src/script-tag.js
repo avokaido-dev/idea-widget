@@ -12,7 +12,7 @@
 import { createIdeaWidget } from "./widget.js";
 import { themeOption } from "./theme.js";
 
-/** What `data-route` may say to switch the route off. */
+/** What `data-route` (and `data-page-copy`) may say to switch it off. */
 var ROUTE_OFF = ["off", "false", "no", "0"];
 
 /**
@@ -139,6 +139,13 @@ if (script) {
       // switching a feature off for everybody.
       route: ROUTE_OFF.indexOf(
         String(script.getAttribute("data-route") || "").toLowerCase(),
+      ) < 0,
+      // The same kind of switch, for the copy a before-and-after is drawn
+      // into (see src/copy.js):
+      //
+      //   <script … data-page-copy="off">
+      pageCopy: ROUTE_OFF.indexOf(
+        String(script.getAttribute("data-page-copy") || "").toLowerCase(),
       ) < 0,
     });
 

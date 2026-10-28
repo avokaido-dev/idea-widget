@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.19.0
+
+**A copy of the page, for a before-and-after.** When somebody asks to see
+their suggestion on the page before sending it ("Yes, show me" in the chat),
+the chat asks this script for a copy of the page (`avokaido:copy`) and the
+change is drawn into it and shown beside it.
+
+- Taken at that moment, not before: the markup as it is now, every
+  stylesheet the page can read, and its own fonts and pictures inside the
+  copy (a picture another site does not allow reading becomes a blank of the
+  same size).
+- Left behind: scripts, frames, this widget, and whatever was typed. Emails
+  and phone numbers in the text are replaced.
+- `pageCopy: false` / `data-page-copy="off"` switches it off; the chat then
+  draws the change from the code, as before.
+
 ## 1.18.0
 
 **The box wears the dark side of the brand sheet on a dark page.** The
