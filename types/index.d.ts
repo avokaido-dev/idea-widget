@@ -110,6 +110,16 @@ export interface IdeaWidgetOptions {
    */
   route?: boolean;
   /**
+   * Whether the chat may take a copy of your page when somebody asks to see
+   * their suggestion on it before sending ("Yes, show me"). The change is
+   * drawn into the copy and shown beside it: a before and after. Only on that
+   * answer; what was typed is left out, emails and phone numbers are
+   * replaced, and the copy is kept only as long as the preview's link works.
+   * `false` for a page whose content must not leave it — the change is then
+   * drawn from your code instead. On the script tag: `data-page-copy="off"`.
+   */
+  pageCopy?: boolean;
+  /**
    * Who is looking at your page. Only needed for a link whose admin chose who
    * sees the button (signed-in visitors, certain addresses, certain traits);
    * a link open to everybody ignores it.

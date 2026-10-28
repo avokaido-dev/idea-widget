@@ -26,6 +26,7 @@
  */
 
 import { launcherFont, matchTheme, systemTheme, themeOption, withSystem } from "./theme.js";
+import { copyPage } from "./copy.js";
 
 /** Corners the launcher and the dock may sit in. */
 export const CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"];
@@ -110,6 +111,14 @@ export const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  *        The query is never sent either way, which is where `?token=` and
  *        `?email=` live; a path segment like `/patients/4821` is not, and that
  *        is the case this switch is for.
+ * @param {boolean} [options.pageCopy=true]
+ *        Whether the chat may take a copy of this page, when somebody asks to
+ *        see their suggestion on it before sending ("Yes, show me"): the
+ *        server draws the change into the copy and shows the two side by
+ *        side. Only on that answer, with what was typed left out and emails
+ *        and phone numbers replaced — see `src/copy.js`. Pass `false` for a
+ *        page that shows what must not leave it; the chat then draws the
+ *        change from your code instead, or not at all.
  * @param {{id?: string|number, email?: string, traits?: Object, getIdToken?: Function}} [options.user]
  *        Who is looking at your page, for a link whose admin chose who sees the
  *        button. Only needed then; call `identify()` later if you learn it
@@ -2748,7 +2757,38 @@ export function createIdeaWidget(options) {
       setLauncher(event.data.launcher);
     } else if (type === "avokaido:level") {
       setLevel(event.data);
+    } else if (type === "avokaido:copy") {
+      answerCopy(event.data.id);
     }
+  }
+
+  /**
+   * A COPY OF THIS PAGE, for a before-and-after — `avokaido:copy` from the
+   * chat, `{ id }`, answered with `{ type: "avokaido:copy", id, copy }` or
+   * `{ …, error }` ("off", "too_big", "failed").
+   *
+   * ASKED FOR, NEVER OFFERED: the chat asks only once somebody has said they
+   * want to see their change on the page, and this page answers only the
+   * frame it opened (`onMessage` checks both). Taken now rather than at open,
+   * so it is the page as it is when they ask — the screen they talked about.
+   */
+  function answerCopy(id) {
+    if (opts.pageCopy === false) {
+      postToFrame({ type: "avokaido:copy", id: id, error: "off" });
+      return;
+    }
+    copyPage().then(
+      function (copy) {
+        postToFrame({ type: "avokaido:copy", id: id, copy: copy });
+      },
+      function (e) {
+        postToFrame({
+          type: "avokaido:copy",
+          id: id,
+          error: e && e.message === "too_big" ? "too_big" : "failed",
+        });
+      },
+    );
   }
 
   /**

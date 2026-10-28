@@ -28,6 +28,9 @@ const theme = readFileSync(join(root, "src/theme.js"), "utf8")
   // `export var` / `export function` -> plain declarations.
   .replace(/^export /gm, "");
 
+// The page copy next: the widget answers the chat's request for it.
+const copy = readFileSync(join(root, "src/copy.js"), "utf8").replace(/^export /gm, "");
+
 const widget = readFileSync(join(root, "src/widget.js"), "utf8")
   // `export const` / `export function` -> plain declarations.
   .replace(/^export /gm, "")
@@ -42,7 +45,7 @@ const banner = `/**
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
  *
- * GENERATED FILE — edit src/theme.js, src/widget.js or src/script-tag.js and run
+ * GENERATED FILE — edit src/theme.js, src/copy.js, src/widget.js or src/script-tag.js and run
  * \`npm run build\`. Source, licence and docs: ${pkg.repository.url}
  *
  * VERSIONED IN THE PATH. You paste this once and never touch it again, so
@@ -55,6 +58,8 @@ const out = `${banner}(function () {
   "use strict";
 
 ${theme}
+
+${copy}
 
 ${widget}
 

@@ -428,6 +428,7 @@ Script tag attributes, and the equivalent options:
 | `data-preload` | `preload` | `"intent"` | When the chat is built ahead of the click, so it opens instantly: `"intent"` when the launcher is pointed at, focused or touched, or after a few idle seconds; `"eager"` as soon as the launcher may show (an app's own dashboard); `"off"` only on the click. Built ahead, it stays out of sight and holds no connection until opened, and closing keeps it for the next open. |
 | `data-context` | `context` | none | Where in your app the person is, so the interview need not ask. Re-read on every open — keep it current as they navigate. The option also takes an object or a function; see [Telling it where the person is](#telling-it-where-the-person-is). |
 | `data-route` | `route` | on | Send the page's path and hash, so a suggestion says which screen it is about. The query string is never sent either way. `data-route="off"` for an app whose paths name things that must not leave it; see [What it sends](#what-it-sends). |
+| `data-page-copy` | `pageCopy` | on | Let the chat take a copy of the page when somebody asks to see their suggestion on it before sending, for a before-and-after. Only on that answer. `data-page-copy="off"` for a page whose content must not leave it; see [What it sends](#what-it-sends). |
 | `data-user-id` · `data-user-email` · `data-user-traits` | `user` | none | Who is looking, for a link limited to certain visitors; traits are JSON. Watched for changes. See [Choosing who sees it](#choosing-who-sees-it). |
 | `data-origin` | `origin` | the script's own origin | Where the interview lives. The script-tag build defaults to the origin it was served from, so an embed served from a preview channel frames the preview. **Set this explicitly if you serve the file from a third-party CDN** (jsDelivr, unpkg) or self-host it — otherwise the widget frames the CDN. |
 
@@ -691,6 +692,21 @@ is lost:
 ```html
 <script src="https://app-avokaido-eu.web.app/widget/v1.js"
         data-key="avk_YOUR_KEY" data-route="off" defer></script>
+```
+
+**A copy of the page, only when asked.** When the chat has understood a
+request, it can offer to show the change on the page before it is sent. If the
+person says "Yes, show me", the widget copies the page as it is at that moment
+(its markup, styles, fonts and pictures) and the change is drawn into the copy
+and shown beside it. What was typed into fields is left out, and anything that
+looks like an email address or a phone number is replaced before it leaves.
+The copy is kept as long as the preview's link works. If your page shows what
+must not leave it, switch the copy off; the chat then draws the change from
+your code instead:
+
+```html
+<script src="https://app-avokaido-eu.web.app/widget/v1.js"
+        data-key="avk_YOUR_KEY" data-page-copy="off" defer></script>
 ```
 
 `context` sits beside the route and is the opposite shape: nothing is read off
