@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.20.0
+
+**A preview of the change fills the whole window.** "Open bigger" on a
+before-and-after (`avokaido:wide`) made the box a centred panel of at most
+1200 by 820 over a dimmed page; it now covers the whole window, edge to edge,
+with no radius, border or shadow, until the preview closes. Closing it still
+hands back the box exactly where and how big it was. On a phone nothing
+changes: the box was the whole screen already.
+
 ## 1.19.0
 
 **A copy of the page, for a before-and-after.** When somebody asks to see
