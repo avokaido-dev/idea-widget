@@ -1284,13 +1284,16 @@ export function createIdeaWidget(options) {
          Both dimensions stay under the viewport clamps above, so the wide
          box on a laptop is the laptop's width minus its margins. */
       ".dock.wide { width: 768px; height: 640px }",
-      /* THE ONE TIME IT IS A LIGHTBOX: a preview of the suggested change,
-         asked for by the page with `avokaido:wide`. A change somebody is
-         about to send is worth trying at something like the size it will
-         run at, and 768 pixels of a corner is not that — so for as long as
-         the preview is up, the box is centred and the page behind it is
-         dimmed. The page is not what is being looked at then; the preview
-         of what it would become is.
+      /* THE ONE TIME IT IS THE WHOLE WINDOW: a preview of the suggested
+         change, asked for by the page with `avokaido:wide`. A change somebody
+         is about to send is worth seeing at the size it will run at, and the
+         page it changes is the whole window — so for as long as the preview
+         is up, so is the box. (Until 1.20 it was a centred panel of at most
+         1200 by 820 over a dimmed page, and a before-and-after side by side
+         in that was two thirds of a laptop screen each cut in half.) The
+         page is not what is being looked at then; the preview of what it
+         would become is. No card edges at the edge of the screen: no radius,
+         border or shadow, as on a phone.
          IMPORTANT, for the reason the phone rule below gives: a box that was
          moved or resized carries left/top/width/height inline. Those stay
          where they are, underneath, which is what lets `avokaido:narrow`
@@ -1300,12 +1303,13 @@ export function createIdeaWidget(options) {
          than this message's name. The grip and the handles go: a centred
          panel is not somewhere a box was put, and dragging it would store a
          position measured against the wrong size. */
-      ".dock.panel { z-index: 3; inset: 0 !important; margin: auto;",
-      "  width: min(1200px, 94vw) !important; height: min(820px, 90vh) !important;",
+      ".dock.panel { z-index: 3; inset: 0 !important;",
+      "  width: auto !important; height: auto !important;",
       "  max-width: none !important; max-height: none !important;",
-      /* In one frame: it leaves its corner for the middle of the window
-         either way, and a box teleporting and then growing reads as two
-         things happening. The scrim fading in is the only motion. */
+      "  border-radius: 0; border: 0; box-shadow: none;",
+      /* In one frame: it leaves its corner for the whole window either way,
+         and a box teleporting and then growing reads as two things
+         happening. */
       "  transition: none }",
       ".dock.panel .grip, .dock.panel .sizer { display: none }",
       /* Under the panel and over everything else of ours, the launcher
@@ -2019,7 +2023,7 @@ export function createIdeaWidget(options) {
   }
 
   /**
-   * The centred panel for a preview of the change, and back.
+   * The whole-window panel for a preview of the change, and back.
    *
    * ASKED FOR, LIKE THE CONSOLE'S ROOM, and for the same reason: only the page
    * knows a preview is showing, and only this half can make the box bigger.
@@ -2060,8 +2064,8 @@ export function createIdeaWidget(options) {
       scrim = null;
     }
     if (!overlay || !overlay.classList.contains("panel")) return;
-    // BACK IN ONE FRAME, not eased from 1200 pixels down. The box jumps from
-    // the middle of the window to its corner either way, and the clamp below
+    // BACK IN ONE FRAME, not eased from the whole window down. The box jumps
+    // from filling the window to its corner either way, and the clamp below
     // has to measure the box that came back — mid-transition it would
     // measure most of the panel, and push a box at the right of the window
     // left by the difference.
@@ -2614,7 +2618,7 @@ export function createIdeaWidget(options) {
    * Only a box somebody has moved: an undragged one is positioned by the corner
    * classes and reflows on its own. And not under a preview's panel, which is
    * what the clamp would measure: a box at the right of a wide window would be
-   * moved to fit 1200 pixels of panel, and come back from `narrow` somewhere
+   * moved to fit the window-sized panel, and come back from `narrow` somewhere
    * nobody put it. `widen` clamps again on the way out.
    */
   function reclamp() {

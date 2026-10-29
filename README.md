@@ -585,10 +585,9 @@ on the hosted side.
   sending them to a link. So Escape, the × and the launcher itself are the
   only exits — pressing the launcher again puts the box away.
 - **Except for a preview.** When the interview shows a clickable preview of
-  the suggested change, the box becomes a centred panel
-  (`min(1200px, 94vw)` × `min(820px, 90vh)`) over a dim scrim that covers your
-  page and the launcher, for as long as the preview is up. A click on the
-  scrim does nothing — the preview has its own close — and the box goes back
+  the suggested change, the box fills the whole window, over your page and
+  the launcher, for as long as the preview is up. The preview has its own
+  close, and the box goes back
   to exactly where and how big it was when the preview closes. Escape and the
   × still close it; closing drops the panel. On a phone the box is already the
   whole screen, and nothing changes.

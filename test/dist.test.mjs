@@ -193,10 +193,11 @@ describe("resizing the dock", () => {
 });
 
 describe("the preview's panel", () => {
-  it("is centred, at most 1200 by 820, and wins over a moved or resized box", () => {
+  it("is the whole window, edge to edge, and wins over a moved or resized box", () => {
     // Inline left/top/width/height beat a class, as on a phone.
-    assert.match(dist, /\.dock\.panel \{ z-index: 3; inset: 0 !important; margin: auto;/);
-    assert.match(dist, /width: min\(1200px, 94vw\) !important; height: min\(820px, 90vh\) !important;/);
+    assert.match(dist, /\.dock\.panel \{ z-index: 3; inset: 0 !important;",\s+"  width: auto !important; height: auto !important;/);
+    assert.match(dist, /"  border-radius: 0; border: 0; box-shadow: none;",\s+[\s\S]{0,200}"  transition: none \}"/);
+    assert.equal(/min\(1200px, 94vw\)/.test(dist), false);
   });
 
   it("dims the page behind it, launcher included", () => {
