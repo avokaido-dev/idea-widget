@@ -134,6 +134,13 @@ export const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  *        this browser makes up and keeps in its own storage — see
  *        `visitorId`. That id is NEVER sent anywhere: the bucket is worked
  *        out on the page, from the id and a salt the server hands over.
+ * @param {Array<{id: string, name: string, about: string, params?: Array<{name: string, about: string, required?: boolean}>, run: Function}>} [options.actions]
+ *        What the box may do in your app, when somebody asks it to and
+ *        confirms: each a `run(args)` function of yours, with a name and a
+ *        sentence the chat chooses by. `args` is `{ paramName: "value" }`;
+ *        `run` returns (a promise of) `{ ok, message }`, or nothing for done.
+ *        Replace the list as the screen changes with `setActions()`. Only the
+ *        description is sent to the chat, never `run` — see `readActions`.
  */
 /**
  * The longest context this will put in a URL.
@@ -588,6 +595,188 @@ export function flattenContext(value) {
   return "";
 }
 
+/**
+ * WHAT THE BOX MAY RUN IN THIS APP: only what the app itself registered.
+ *
+ * The chat can offer to do something in the host app ("archive this
+ * project"), but never by driving the page: the app declares its actions here
+ * — an id, a name, a sentence on what it does, the values it takes, and a
+ * `run` function — and the chat only picks one and fills in the values. The
+ * visitor confirms in the chat; only then does it ask this script to run it
+ * (`avokaido:action`), and the app runs it in its own session, with its own
+ * checks. This widget carries no credential and decides nothing about who may
+ * do what: that is the app's, inside `run`.
+ *
+ * THE CAPS ARE THE CHAT'S AS WELL. Whatever passes here is what the chat is
+ * told and the model reads, so an action that does not fit is dropped, not
+ * cut: a name cut short describes a different action. One warning per
+ * reading, not one per action.
+ */
+var MAX_ACTIONS = 20;
+var ACTION_NAME = /^[a-z0-9][a-z0-9-]*$/;
+var MAX_ACTION_ID = 40;
+var MAX_ACTION_TITLE = 40;
+var MAX_ACTION_ABOUT = 200;
+var MAX_ACTION_PARAMS = 6;
+var MAX_PARAM_NAME = 30;
+var MAX_PARAM_ABOUT = 120;
+/** The longest `message` this posts back to the chat after a run. */
+var MAX_ACTED_MESSAGE = 300;
+
+/** A trimmed string of 1 to [max] characters, or null. */
+function textWithin(value, max) {
+  if (typeof value !== "string") return null;
+  var s = value.trim();
+  return s && s.length <= max ? s : null;
+}
+
+/** One action as the app gave it, read — or null when it does not fit. */
+function readAction(value) {
+  if (!value || typeof value !== "object") return null;
+  var id = textWithin(value.id, MAX_ACTION_ID);
+  var name = textWithin(value.name, MAX_ACTION_TITLE);
+  var about = textWithin(value.about, MAX_ACTION_ABOUT);
+  if (!id || !ACTION_NAME.test(id) || !name || !about) return null;
+  if (typeof value.run !== "function") return null;
+  var raw = value.params == null ? [] : value.params;
+  if (!Array.isArray(raw) || raw.length > MAX_ACTION_PARAMS) return null;
+  var params = [];
+  for (var i = 0; i < raw.length; i++) {
+    var p = raw[i];
+    if (!p || typeof p !== "object") return null;
+    var pName = textWithin(p.name, MAX_PARAM_NAME);
+    var pAbout = textWithin(p.about, MAX_PARAM_ABOUT);
+    if (!pName || !ACTION_NAME.test(pName) || !pAbout) return null;
+    for (var j = 0; j < params.length; j++) {
+      if (params[j].name === pName) return null;
+    }
+    params.push({ name: pName, about: pAbout, required: p.required === true });
+  }
+  var fn = value.run;
+  return {
+    id: id,
+    name: name,
+    about: about,
+    params: params,
+    // Called on the app's own object, so a method written in place keeps
+    // its `this` — as `readUser` does for `getIdToken`.
+    run: function (args) {
+      return fn.call(value, args);
+    },
+  };
+}
+
+/**
+ * The app's actions as this widget keeps them: `{ id, name, about, params,
+ * run }`, at most [MAX_ACTIONS], each id once (the first wins). Anything that
+ * does not fit the caps is dropped, with one warning.
+ *
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE, like `readUser`.
+ *
+ * `run` IS KEPT, NEVER WRITTEN DOWN. Like `getIdToken`, it stays a function
+ * in this closure: not serialised, not posted. The chat is told the rest
+ * (`describeActions`).
+ */
+export function readActions(list) {
+  if (list == null) return [];
+  var out = [];
+  var dropped = 0;
+  if (!Array.isArray(list)) {
+    dropped = 1;
+  } else {
+    for (var i = 0; i < list.length; i++) {
+      var action = readAction(list[i]);
+      var taken = false;
+      for (var j = 0; action && j < out.length; j++) {
+        if (out[j].id === action.id) taken = true;
+      }
+      if (action && !taken && out.length < MAX_ACTIONS) out.push(action);
+      else dropped++;
+    }
+  }
+  if (dropped && typeof console !== "undefined" && console.warn) {
+    console.warn(
+      "[avokaido] " + dropped + " action(s) did not fit and were left out — " +
+        "see \"Letting the box run things in your app\" in the README",
+    );
+  }
+  return out;
+}
+
+/**
+ * The actions as the chat is told them, on every open: everything but `run`.
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+export function describeActions(actions) {
+  return actions.map(function (a) {
+    return {
+      id: a.id,
+      name: a.name,
+      about: a.about,
+      params: a.params.map(function (p) {
+        return { name: p.name, about: p.about, required: p.required };
+      }),
+    };
+  });
+}
+
+/**
+ * Runs the action the chat asked for, once the visitor pressed "Do it" there,
+ * and settles to what is posted back — `{ ok, message }`, never a rejection —
+ * with the `args` it handed over, for the page's `avokaido:action` event.
+ *
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ *
+ * ONLY THE DECLARED VALUES REACH `run`: a fresh object with the action's own
+ * params, each a string, and nothing else the message carried. A required
+ * one missing is refused here rather than left to the app to notice.
+ *
+ * A HOST APP'S BUG IS AN ANSWER, NOT A HANG. A throw or a rejection becomes
+ * `ok: false` with its message, so the chat can say it did not happen;
+ * nothing at all (`undefined`) reads as done.
+ */
+export function runAction(actions, actionId, rawArgs) {
+  var cut = function (s) {
+    return String(s).slice(0, MAX_ACTED_MESSAGE);
+  };
+  var action = null;
+  for (var i = 0; i < actions.length; i++) {
+    if (actions[i].id === actionId) action = actions[i];
+  }
+  var args = {};
+  var settled = function (ok, message) {
+    return { ok: ok, message: cut(message), args: args };
+  };
+  if (!action) return Promise.resolve(settled(false, "No such action"));
+  var given = rawArgs && typeof rawArgs === "object" ? rawArgs : {};
+  for (var j = 0; j < action.params.length; j++) {
+    var p = action.params[j];
+    var v = Object.prototype.hasOwnProperty.call(given, p.name) ? given[p.name] : null;
+    if (typeof v === "number" || typeof v === "boolean") v = String(v);
+    if (typeof v === "string" && v !== "") args[p.name] = v;
+    else if (p.required) {
+      return Promise.resolve(settled(false, "Missing " + p.name));
+    }
+  }
+  var failed = function (err) {
+    var why = err && typeof err.message === "string" ? err.message
+      : typeof err === "string" ? err : "";
+    return settled(false, why);
+  };
+  try {
+    return Promise.resolve(action.run(args)).then(function (result) {
+      if (result == null) return settled(true, "");
+      if (typeof result !== "object") return settled(result !== false, "");
+      return settled(
+        result.ok !== false,
+        typeof result.message === "string" ? result.message : "",
+      );
+    }).catch(failed);
+  } catch (err) {
+    return Promise.resolve(failed(err));
+  }
+}
+
 export function createIdeaWidget(options) {
   var opts = options || {};
 
@@ -868,6 +1057,8 @@ export function createIdeaWidget(options) {
    * interview it opens could not load either.
    */
   var user = readUser(opts.user);
+  /** What the app lets the box run, as `readActions` kept it. */
+  var actions = readActions(opts.actions);
   /**
    * The link's answer to the GET, as it came — `{ show, paths, visitor, ask,
    * anyOf?, noneOf? }` — and the latest POST's verdict laid over it when the
@@ -2102,6 +2293,9 @@ export function createIdeaWidget(options) {
     // the right colours and corners rather than repainting after it.
     tellTheme();
     tellLayout();
+    // What the box may run here, as of this open — without `run`, which never
+    // leaves this page. No key at all when the app registered none.
+    if (actions.length) message.actions = describeActions(actions);
     postToFrame(message);
     if (user && typeof user.getIdToken === "function") {
       idTokenWithin(user.getIdToken, ID_TOKEN_WAIT_MS)
@@ -3021,6 +3215,27 @@ export function createIdeaWidget(options) {
   }
 
   /**
+   * THE VISITOR PRESSED "DO IT" IN THE CHAT: run one of the app's actions.
+   *
+   * The chat confirmed with the visitor before sending this; it names an
+   * action the app registered and the values the model filled in. The app's
+   * `run` does the work, in its own session — this script only finds it,
+   * hands it the declared values (`runAction`), and posts back how it went
+   * (`avokaido:acted`), always, so the chat never waits on an answer that
+   * cannot come. Then `avokaido:action` on the page, for the app's own
+   * measuring.
+   */
+  function actFor(data) {
+    var id = data && typeof data.id === "number" ? data.id : 0;
+    var actionId = data && typeof data.actionId === "string" ? data.actionId : "";
+    runAction(actions, actionId, data && data.args).then(function (result) {
+      if (destroyed) return;
+      postToFrame({ type: "avokaido:acted", id: id, ok: result.ok, message: result.message });
+      emit("action", { actionId: actionId, args: result.args, ok: result.ok });
+    });
+  }
+
+  /**
    * BACK WHERE THE BUTTON TOOK THEM. A page [navigateFor] sent somewhere with
    * a plain navigation is a new page, and this script starts again on it with
    * the box shut. The note left before going says to open it — once, and only
@@ -3096,6 +3311,8 @@ export function createIdeaWidget(options) {
       }, 2200);
     } else if (type === "avokaido:navigate") {
       navigateFor(event.data);
+    } else if (type === "avokaido:action") {
+      actFor(event.data);
     } else if (type === "avokaido:close") {
       close("page");
     } else if (type === "avokaido:dismiss") {
@@ -3602,6 +3819,14 @@ export function createIdeaWidget(options) {
     identify: function (next) {
       user = readUser(next);
       if (answer) checkVisitor();
+    },
+    /**
+     * Replaces what the box may run in this app — call it again as the
+     * screen changes, and with `[]` for nothing. The chat is told the list
+     * on its next open. See `readActions` for the shape and the caps.
+     */
+    setActions: function (list) {
+      actions = readActions(list);
     },
   };
 }

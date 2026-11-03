@@ -2,6 +2,31 @@
 
 ## 1.22.0
 
+**The box can run things in your app — only what your app registers.** An
+app declares its actions in code (`actions` on `createIdeaWidget`,
+`widget.setActions(list)`, or `window.avokaido.actions.set / register /
+unregister` with the script tag, queued when called before it loads): an
+`id`, a `name`, a sentence (`about`), up to six `params`, and a `run(args)`
+function of its own. The chat may only pick one and fill in the values; it
+shows the person what it is about to do, and only on **Do it** asks this
+script to run it (`avokaido:action`). This script calls `run` with the
+declared params as strings, and answers `avokaido:acted { id, ok, message }`
+— a throw or a rejection is `ok: false` with its message, an unknown action
+`"No such action"`.
+
+- `run` stays in the page: every `avokaido:open` carries the list without
+  it (`actions`, absent when there are none), and nothing else.
+- No credential is carried and nothing is authorised here: `run` works in
+  the app's own session, with the app's own checks.
+- Caps, which the chat shares: 20 actions; `id` `/^[a-z0-9][a-z0-9-]*$/` up
+  to 40; `name` 40; `about` 200; 6 `params`, each `name` like an id up to 30
+  and `about` 120; `message` 300. What does not fit is left out whole, with
+  one warning.
+- `avokaido:action` fires on the page after each ask, with `{ actionId,
+  args, ok }`.
+- A chat from before this ignores `actions` on `open` and never sends the
+  message; an older script never sends `actions`, so the chat offers none.
+
 **A button under an answer takes the page there.** The box can now answer
 simple questions about the app it sits on ("where are receipts?") and offer
 the page as a button. Pressed, the chat asks for it (`avokaido:navigate`), and

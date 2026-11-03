@@ -49,9 +49,20 @@
         || "avk_example-not-a-real-key",
       origin: new URLSearchParams(location.search).get("origin") || undefined,
       label: "Suggest a change",
+      // One thing the box may do on this page, once the visitor confirms it.
+      actions: [{
+        id: "change-title",
+        name: "Change the page title",
+        about: "Sets this page's heading to the given text.",
+        params: [{ name: "title", about: "The new heading.", required: true }],
+        run: ({ title }) => {
+          document.querySelector("h1").textContent = title;
+          return { ok: true, message: "Heading changed." };
+        },
+      }],
     });
 
-    for (const name of ["ready", "submitted", "closed"]) {
+    for (const name of ["ready", "submitted", "closed", "action"]) {
       document.addEventListener("avokaido:" + name, (e) =>
         log(`avokaido:${name} ${JSON.stringify(e.detail)}`),
       );

@@ -131,6 +131,53 @@ export interface IdeaWidgetOptions {
    * Learn it after boot? Leave this out and call {@link IdeaWidget.identify}.
    */
   user?: IdeaWidgetUser | null;
+  /**
+   * What the box may do in your app when somebody asks it to and confirms —
+   * each one your own `run` function, which works in your app's own session
+   * with your own checks. The chat only picks one and fills in its values.
+   * Replace the list as the screen changes with {@link IdeaWidget.setActions}.
+   *
+   * An action that does not fit the caps (see {@link IdeaWidgetAction}) is
+   * left out, with one warning. Only the description is sent to the chat;
+   * `run` never leaves the page.
+   */
+  actions?: readonly IdeaWidgetAction[] | null;
+}
+
+/**
+ * One thing your app lets the box do. At most 20 per list, each `id` once.
+ */
+export interface IdeaWidgetAction {
+  /** Matches `/^[a-z0-9][a-z0-9-]*$/`, up to 40 characters. */
+  id: string;
+  /** What the person is shown, up to 40 characters. */
+  name: string;
+  /** What it does, for the chat to choose by — up to 200 characters. */
+  about: string;
+  /** At most 6. */
+  params?: readonly IdeaWidgetActionParam[];
+  /**
+   * Does it. `args` holds only the declared params, each a string; a
+   * required one is never missing. Return `{ ok, message }` (the message,
+   * up to 300 characters, is what the box tells the person), or nothing
+   * for done. A throw or a rejection is `ok: false` with its message.
+   */
+  run(
+    args: Record<string, string>,
+  ): IdeaWidgetActionResult | void | PromiseLike<IdeaWidgetActionResult | void>;
+}
+
+export interface IdeaWidgetActionParam {
+  /** Matches `/^[a-z0-9][a-z0-9-]*$/`, up to 30 characters. */
+  name: string;
+  /** What to fill in, for the chat — up to 120 characters. */
+  about: string;
+  required?: boolean;
+}
+
+export interface IdeaWidgetActionResult {
+  ok: boolean;
+  message?: string;
 }
 
 /**
@@ -247,6 +294,11 @@ export interface IdeaWidget {
    * the button shows. For an app that signs somebody in after boot.
    */
   identify(user: IdeaWidgetUser | null): void;
+  /**
+   * Replaces what the box may do in your app — call it again as the screen
+   * changes, and with `[]` for nothing. The chat is told on its next open.
+   */
+  setActions(actions: readonly IdeaWidgetAction[] | null): void;
   /** Whether the button would show for this visitor on this page right now. */
   isShown(): boolean;
 }
@@ -294,6 +346,17 @@ declare global {
       destroyIdeas?: () => void;
       identify?: (user: IdeaWidgetUser | null) => void;
       isShown?: () => boolean;
+      /**
+       * What the box may do in your app. Before the script has loaded, a
+       * `{ queue: [["set" | "register" | "unregister", arg], …] }` left here
+       * is replayed in order — see the README's `avokaidoActions()` helper.
+       */
+      actions?: {
+        set(actions: readonly IdeaWidgetAction[]): void;
+        register(action: IdeaWidgetAction): void;
+        unregister(id: string): void;
+        queue?: Array<["set" | "register" | "unregister", unknown]>;
+      };
     };
   }
   interface DocumentEventMap {
@@ -307,5 +370,14 @@ declare global {
      * dot for it; an app with its own menu item can show its own.
      */
     "avokaido:pending": CustomEvent<{ state: "ready" | "waiting" | null }>;
+    /**
+     * After every action the box asked for: which, with what, and whether it
+     * was done (`false` when it failed, or was refused before running).
+     */
+    "avokaido:action": CustomEvent<{
+      actionId: string;
+      args: Record<string, string>;
+      ok: boolean;
+    }>;
   }
 }
