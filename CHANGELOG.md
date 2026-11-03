@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.21.0
+
+**Who sees the button, in groups.** The audience check now understands the
+console's groups of rules: any group admits, and a group can exclude. Beside
+people, pages and traits, a group can name countries (decided from the
+visitor's time zone), languages (the browser's) and a percentage of visitors
+(a stable bucket per visitor). Avokaido settles what it can and hands the page
+what is left of each group; the page decides pages, languages and the
+percentage, so no path of the page and nothing of the visitor's languages is
+sent.
+
+- The check asks about the visitor whenever the link says to (`ask`), even
+  about nobody — a country rule needs the time zone, which only the page can
+  state. The POST carries `tz` and `visitor` (null for nobody).
+- The percentage is dealt by the visitor's `id`, else `email`, else an
+  anonymous id this browser makes up and keeps (`avokaido.ideas.vid`). The
+  id is never sent: the bucket is FNV-1a of a salt and the id, worked out on
+  the page.
+- An answer without groups — a backend older than this file — is decided
+  exactly as before: `show`, and the link's `paths`. A 404 still shows to all.
+
+Release after the backend that answers with groups, and before the console
+that writes them.
+
 ## 1.20.0
 
 **A preview of the change fills the whole window.** "Open bigger" on a
