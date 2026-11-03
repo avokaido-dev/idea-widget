@@ -1485,6 +1485,12 @@ const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  *        a function returning (a promise of) the signed-in user's ID token.
  *        The audience check then sends the token instead of a description,
  *        and Avokaido reads who is looking from it — see `readUser`.
+ *
+ *        For a link shown to a percentage of visitors, the visitor is put in
+ *        a bucket by their `id`, else their `email`, else an anonymous id
+ *        this browser makes up and keeps in its own storage — see
+ *        `visitorId`. That id is NEVER sent anywhere: the bucket is worked
+ *        out on the page, from the id and a salt the server hands over.
  */
 /**
  * The longest context this will put in a URL.
@@ -1577,6 +1583,223 @@ function matchesPath(patterns, loc) {
     if (re.test(subject)) return true;
   }
   return false;
+}
+
+/**
+ * A language tag as the audience check compares it: trimmed, lower-cased,
+ * `_` to `-` (a Java-style `sv_SE` becomes `sv-se`). Empty for nothing.
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE, like `routeOf`.
+ */
+function normaliseLang(value) {
+  return String(value == null ? "" : value)
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-");
+}
+
+/**
+ * The visitor's languages as the browser states them, normalised: every
+ * entry of `navigator.languages` when it is a non-empty array, else the one
+ * `navigator.language`. Nothing of this leaves the page — the server hands
+ * over the languages a link is limited to, and they are compared here.
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function languagesOf(nav) {
+  var list =
+    nav && Array.isArray(nav.languages) && nav.languages.length > 0
+      ? nav.languages
+      : [nav ? nav.language : ""];
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    var lang = normaliseLang(list[i]);
+    if (lang) out.push(lang);
+  }
+  return out;
+}
+
+/**
+ * Whether one of the visitor's [languages] is on a link's list of [rules].
+ *
+ * A rule matches a language that is it, or that is under it: `sv` matches
+ * `sv` and `sv-se`, and `sv-se` matches only `sv-se`. Any of the visitor's
+ * languages counts, not only the first. No rules means every language.
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function matchesLocale(rules, languages) {
+  if (!rules || rules.length === 0) return true;
+  var langs = languages || [];
+  for (var i = 0; i < langs.length; i++) {
+    var l = normaliseLang(langs[i]);
+    if (!l) continue;
+    for (var j = 0; j < rules.length; j++) {
+      var r = normaliseLang(rules[j]);
+      if (!r) continue;
+      if (l === r || l.indexOf(r + "-") === 0) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * FNV-1a, 32-bit, over the UTF-8 bytes of a string — the hash the audience
+ * check puts a visitor in a rollout bucket with. The server has the same
+ * function, so a percentage it works out for a report is the one the page
+ * works out for the button: change this and the two disagree.
+ *
+ * `unescape(encodeURIComponent(s))` is the UTF-8 encoding every browser this
+ * file runs in has, with no TextEncoder to feature-detect. `Math.imul` keeps
+ * the multiply in 32 bits. EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function fnv1a32(s) {
+  var bytes = unescape(encodeURIComponent(String(s == null ? "" : s)));
+  var h = 0x811c9dc5;
+  for (var i = 0; i < bytes.length; i++) {
+    h ^= bytes.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/**
+ * The bucket, 0–99, a visitor falls in for one rollout: the hash of the
+ * rollout's salt and the visitor's id. A different salt deals the visitors
+ * out again, so two links at 10 % do not pick the same tenth. The visitor is
+ * in when the bucket is below the rollout's percent — see `passesResidual`.
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function rolloutBucket(vid, salt) {
+  return fnv1a32(String(salt == null ? "" : salt) + ":" + String(vid == null ? "" : vid)) % 100;
+}
+
+/**
+ * Sixteen base-36 characters nobody can guess, for the anonymous visitor id
+ * (see `visitorId`): from `crypto.getRandomValues` where there is one, else
+ * `Math.random`. A rollout bucket, not a secret: the small bias of a byte
+ * modulo 36 does not matter here. EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function anonymousId() {
+  var chars = "0123456789abcdefghijklmnopqrstuvwxyz";
+  var bytes = null;
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+      bytes = crypto.getRandomValues(new Uint8Array(16));
+    }
+  } catch (e) {
+    bytes = null;
+  }
+  var out = "";
+  for (var i = 0; i < 16; i++) {
+    var n = bytes ? bytes[i] : Math.floor(Math.random() * 256);
+    out += chars.charAt(n % 36);
+  }
+  return out;
+}
+
+/**
+ * The visitor's time zone, as the browser states it, or "" where it cannot
+ * say — the one thing about the visitor the audience check sends that the
+ * page did not describe, for a link limited to certain countries. Never a
+ * position: a time zone is a region of hundreds of kilometres, and it is
+ * compared and dropped like the rest. EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function timeZoneNow() {
+  try {
+    var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof tz === "string" ? tz : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+/**
+ * Whether the visitor passes what the server left for the page to decide of
+ * one group of rules — a RESIDUAL: `{ paths?, locales?, rollout? }`, each
+ * present only when the group has such a rule. `{}` is a group the server
+ * settled by itself (passed, nothing left); `null` is one it settled against
+ * the visitor, which nothing on the page can turn around.
+ *
+ * [env] is what the page knows: `loc` (a Location), `languages` (see
+ * `languagesOf`) and `vid`, the visitor id for the rollout bucket — a string,
+ * or a function giving one, called only when a rollout is in the way, so the
+ * anonymous id is made up on first need and not before.
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function passesResidual(r, env) {
+  if (r == null || typeof r !== "object") return false;
+  var e = env || {};
+  if (r.paths && !matchesPath(r.paths, e.loc)) return false;
+  if (r.locales && !matchesLocale(r.locales, e.languages)) return false;
+  if (r.rollout) {
+    var percent = Number(r.rollout.percent);
+    var vid = typeof e.vid === "function" ? e.vid() : e.vid;
+    if (!(rolloutBucket(vid, r.rollout.salt) < percent)) return false;
+  }
+  return true;
+}
+
+/**
+ * The audience check's verdict for this page: whether the button shows.
+ *
+ * TWO SHAPES OF ANSWER, one decision. A backend that knows groups answers
+ * `{ show, anyOf: [Residual|null], noneOf: [Residual|null] }`: the button
+ * shows when the link is on (`show`), some group of `anyOf` passes (or there
+ * are none), and no group of `noneOf` does — see `passesResidual`. An older
+ * backend answers `{ show, paths }`, and the page decides exactly as every
+ * widget before 1.21 did: on, and on one of the pages. The two are told
+ * apart by `anyOf` being an array, so this file can go out before its
+ * backend and change nothing until the backend follows.
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function decideAudience(answer, env) {
+  if (!answer || !answer.show) return false;
+  var e = env || {};
+  if (!Array.isArray(answer.anyOf)) {
+    return matchesPath(Array.isArray(answer.paths) ? answer.paths : [], e.loc);
+  }
+  var pass = function (r) {
+    return passesResidual(r, e);
+  };
+  var noneOf = Array.isArray(answer.noneOf) ? answer.noneOf : [];
+  if (answer.anyOf.length > 0 && !answer.anyOf.some(pass)) return false;
+  return !noneOf.some(pass);
+}
+
+/**
+ * The GET's answer with a later POST's verdict laid over it: `show`, `anyOf`
+ * and `noneOf` from the POST where it gave them, everything else — the
+ * look, the launcher, the design system, the pages of an older backend —
+ * from the GET. Null when there was no GET answer. The GET answer itself is
+ * never written to, so a visitor who signs in after the POST said no is
+ * asked about afresh from the link's own answer.
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function mergeAnswer(base, over) {
+  if (!base) return null;
+  if (!over || typeof over !== "object") return base;
+  var out = {};
+  for (var k in base) {
+    if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k];
+  }
+  out.show = Boolean(over.show);
+  if (Array.isArray(over.anyOf)) out.anyOf = over.anyOf;
+  if (Array.isArray(over.noneOf)) out.noneOf = over.noneOf;
+  return out;
+}
+
+/**
+ * Whether an answer leaves pages for the page to decide — so a single-page
+ * app that changes screen has to be watched (see `watchRoute`): the pages of
+ * an older backend's answer, or a residual with pages on either side.
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+function watchesRoute(answer) {
+  if (!answer) return false;
+  var hasPaths = function (r) {
+    return Boolean(r && typeof r === "object" && Array.isArray(r.paths) && r.paths.length > 0);
+  };
+  if (!Array.isArray(answer.anyOf)) return hasPaths(answer);
+  var noneOf = Array.isArray(answer.noneOf) ? answer.noneOf : [];
+  return answer.anyOf.some(hasPaths) || noneOf.some(hasPaths);
 }
 
 /**
@@ -1858,6 +2081,15 @@ function createIdeaWidget(options) {
    */
   var BRAND_KEY = "avokaido.ideas.brand";
   var brand = rememberedBrand();
+  /**
+   * An anonymous visitor id, sixteen characters this browser made up the
+   * first time a link shown to a percentage of visitors needed one, kept in
+   * this site's storage ([VID_KEY]) so the same browser lands in the same
+   * bucket on every visit. NEVER SENT ANYWHERE: not to Avokaido, not to the
+   * chat's frame, not in a URL. The bucket is worked out here, from this id
+   * and a salt the server hands over — see `visitorId` and `rolloutBucket`.
+   */
+  var VID_KEY = "avokaido.ideas.vid";
   var themeNow = null;
   var THEME_RETRIES = [500, 1000, 2000, 4000, 8000];
   var themeRetries = 0;
@@ -1974,10 +2206,13 @@ function createIdeaWidget(options) {
    * WHO SEES THE BUTTON, decided before it is drawn.
    *
    * A link's admin can limit the launcher to signed-in visitors, to certain
-   * addresses, to visitors with certain traits, and to certain pages. The
-   * first three are decided by Avokaido, so a customer's list of people is
-   * never published in their page source; pages are decided here, from
-   * patterns the server hands over — see `matchesPath`.
+   * addresses, to visitors with certain traits, to certain countries, to
+   * certain languages, to a percentage of visitors, and to certain pages —
+   * in groups, any of which admits, and groups that exclude. People and
+   * countries are decided by Avokaido, so a customer's list of people is
+   * never published in their page source; pages, languages and the
+   * percentage are decided here, from what the server leaves of each group
+   * — see `decideAudience`.
    *
    * VISIBILITY, NOT ACCESS CONTROL. The page describes its own visitor, so
    * anybody who can edit it can describe themselves however they like. This
@@ -1990,16 +2225,23 @@ function createIdeaWidget(options) {
    * interview it opens could not load either.
    */
   var user = readUser(opts.user);
-  var rules = null; // { paths, visitor } once the link has answered
-  var admitted = false; // the server-decided half
-  var onPage = false; // the path half
+  /**
+   * The link's answer to the GET, as it came — `{ show, paths, visitor, ask,
+   * anyOf?, noneOf? }` — and the latest POST's verdict laid over it when the
+   * check asked about the visitor ([asked]; see `checkVisitor`). Null until
+   * the link has answered, and for a link that is off.
+   */
+  var answer = null;
+  var asked = null;
+  var passes = false; // the verdict of `decideAudience` for this page
   var decided = false;
   var waiting = []; // open() calls made before the answer
   var checkSeq = 0;
   var destroyed = false;
+  var watching = false; // whether `watchRoute` runs
 
   function allowed() {
-    return decided && admitted && onPage;
+    return decided && passes;
   }
 
   function hasUser() {
@@ -2009,10 +2251,45 @@ function createIdeaWidget(options) {
     );
   }
 
+  /**
+   * Who the rollout bucket is dealt to: the app's `id` for the visitor, else
+   * their `email`, so somebody signed in on two browsers sees the same thing
+   * on both; else an anonymous id this browser keeps ([VID_KEY]); else, where
+   * storage throws (a private window that refuses it), one made up for this
+   * page load. Never sent — see the key's comment.
+   */
+  var pageVid = null;
+  function visitorId() {
+    if (user && user.id != null && String(user.id) !== "") return String(user.id);
+    if (user && user.email) return String(user.email);
+    try {
+      var saved = localStorage.getItem(VID_KEY);
+      if (typeof saved === "string" && saved.length > 0) return saved;
+      var made = anonymousId();
+      localStorage.setItem(VID_KEY, made);
+      return made;
+    } catch (e) {
+      if (!pageVid) pageVid = anonymousId();
+      return pageVid;
+    }
+  }
+
   var announced = null; // the last visibility told to the page
 
   function settle() {
-    onPage = rules ? matchesPath(rules.paths, location) : false;
+    var now = mergeAnswer(answer, asked);
+    passes = now
+      ? decideAudience(now, {
+          loc: location,
+          languages: languagesOf(navigator),
+          vid: visitorId,
+        })
+      : false;
+    // Pages are decided here, so a single-page app that changes screen is
+    // watched — from the first answer that leaves pages to decide, which a
+    // POST can be the first to do (a group of "signed in, on /app/*" is
+    // settled against nobody until somebody is named).
+    if (!watching && watchesRoute(now)) watchRoute();
     // TOLD TO THE PAGE, so a host app that draws its own menu item for this
     // (`launcher: "none"`) can hide it exactly when our button would be
     // hidden — otherwise it would offer a button that does nothing. Fired on
@@ -2048,6 +2325,14 @@ function createIdeaWidget(options) {
   /**
    * Asks the server-decided half again — at boot, and on every identify().
    *
+   * WHEN THE LINK SAID TO ASK. A backend that knows groups says so with
+   * `ask`, and is asked even about nobody: a link limited to a country is
+   * decided from the time zone, which only the page can state. An older
+   * backend says `visitor`, and is asked only when somebody is named, since
+   * every rule of its that needs asking is about a person. The verdict is
+   * laid over the GET's answer ([asked]); a check that fails lays `show:
+   * false` over it, so the button stays hidden, as it always has.
+   *
    * WITH THE APP'S ID TOKEN when it gave a `getIdToken`: asked for afresh on
    * every check, so a token the app refreshed is the one sent, and sent as
    * `Authorization: Bearer` — a header, never the body or a URL. Still
@@ -2057,17 +2342,20 @@ function createIdeaWidget(options) {
   function checkVisitor() {
     if (destroyed) return;
     var seq = ++checkSeq;
-    var done = function (ok) {
+    var done = function (over) {
       if (seq !== checkSeq) return; // a later identify() has the floor
-      admitted = ok;
+      asked = over;
       decided = true;
       settle();
     };
-    if (!rules || !rules.visitor) return done(Boolean(rules));
-    // No visitor named, and every people rule needs one: no need to ask.
-    if (!hasUser()) return done(false);
-    var asking = user;
-    idTokenWithin(asking.getIdToken, ID_TOKEN_WAIT_MS)
+    if (!answer) return done(null);
+    var groups = Array.isArray(answer.anyOf);
+    if (groups ? !answer.ask : !answer.visitor) return done(null);
+    // An older backend, no visitor named, and every people rule needs one:
+    // no need to ask.
+    if (!groups && !hasUser()) return done({ show: false });
+    var asking = hasUser() ? user : null;
+    idTokenWithin(asking ? asking.getIdToken : null, ID_TOKEN_WAIT_MS)
       .then(function (token) {
         if (seq !== checkSeq) return null; // superseded while the app answered
         var headers = { "Content-Type": "application/json" };
@@ -2076,11 +2364,16 @@ function createIdeaWidget(options) {
           method: "POST",
           credentials: "omit",
           headers: headers,
-          body: JSON.stringify({ visitor: visitorBody(asking) }),
+          body: JSON.stringify({
+            visitor: asking ? visitorBody(asking) : null,
+            tz: timeZoneNow(),
+          }),
         }).then(function (r) { return r.ok ? r.json() : { show: false }; });
       })
-      .then(function (body) { done(Boolean(body && body.show)); })
-      .catch(function () { done(false); });
+      .then(function (body) {
+        done(body && typeof body === "object" ? body : { show: false });
+      })
+      .catch(function () { done({ show: false }); });
   }
 
   fetch(audienceUrl(), { credentials: "omit" })
@@ -2093,17 +2386,28 @@ function createIdeaWidget(options) {
       return r.ok ? r.json() : { show: false };
     })
     .then(function (body) {
-      if (!body || !body.show) {
-        rules = null;
-        admitted = false;
+      if (!body || typeof body !== "object") body = { show: false };
+      var groups = Array.isArray(body.anyOf);
+      // A link that is off, or on an origin it does not allow, is final — an
+      // answer with groups that says so but asks to be told about the
+      // visitor is asked, since the POST may answer otherwise.
+      if (!body.show && !(groups && body.ask)) {
+        answer = null;
+        asked = null;
         decided = true;
         settle();
         return;
       }
-      rules = {
+      answer = {
+        show: Boolean(body.show),
         paths: Array.isArray(body.paths) ? body.paths : [],
         visitor: Boolean(body.visitor),
+        ask: Boolean(body.ask),
       };
+      if (groups) {
+        answer.anyOf = body.anyOf;
+        answer.noneOf = Array.isArray(body.noneOf) ? body.noneOf : [];
+      }
       // THE TEAM'S BUTTON, chosen in Settings: here, before the button is
       // first shown (`settle`), so it is first seen as the team chose it.
       var teamShape =
@@ -2135,7 +2439,6 @@ function createIdeaWidget(options) {
       // Now the look the box wears is known: report it if the page gave it.
       audienceShown = true;
       if (themeNow && themeNow.brand) reportLook(themeNow.brand);
-      if (rules.paths.length > 0) watchRoute();
       checkVisitor();
     })
     .catch(function () {
@@ -2160,7 +2463,8 @@ function createIdeaWidget(options) {
    * for the browsers without it.
    */
   function watchRoute() {
-    if (destroyed) return;
+    if (destroyed || watching) return;
+    watching = true;
     var last = routeOf(location);
     var tick = function () {
       var now = routeOf(location);
@@ -4654,7 +4958,7 @@ function createIdeaWidget(options) {
      */
     identify: function (next) {
       user = readUser(next);
-      if (rules) checkVisitor();
+      if (answer) checkVisitor();
     },
   };
 }
