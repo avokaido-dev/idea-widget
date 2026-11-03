@@ -555,6 +555,18 @@ get `avokaido:submitted` either way — a submission that keeps the box open is
 still a submission, and the number you are counting should not change shape
 depending on who sent it.
 
+
+### Taking people to a page
+
+When the box answers a question about your app ("where are receipts?"), it can offer the page as a button. Pressed, the widget sends the page there itself, with a normal navigation, and opens the box again on the page it lands on. An app that routes itself can do it without a reload:
+
+```js
+document.addEventListener("avokaido:navigate", (event) => {
+  event.preventDefault();            // the widget won't navigate
+  router.push(event.detail.path);    // a plain path on your own site, like "/receipt"
+});
+```
+
 ## The faint badge in the corner
 
 The framed page draws a small badge beside its message box. It is not for the
@@ -790,6 +802,7 @@ From the chat to the widget:
 | `avokaido:expand` / `avokaido:collapse` | — | The console's 768 × 640, and back. |
 | `avokaido:wide` / `avokaido:narrow` | — | The centred preview panel over a scrim, and back. |
 | `avokaido:cover` / `avokaido:uncover` | — | The chat shows its own scrim: the widget's × and grip go under it. |
+| `avokaido:navigate` | `id`, `path` | A button under an answer to a question about the app, pressed. Only a plain path on this site: answers `avokaido:navigated`, then emits a cancelable `avokaido:navigate` on the page, and goes there itself unless the page called `preventDefault()` — opening the box again on the page it lands on. |
 
 From the widget to the chat:
 
@@ -798,6 +811,7 @@ From the widget to the chat:
 | `avokaido:open` | `route?`, `at?`, `openMs?` | Every open (and again once the chat has painted). |
 | `avokaido:closed` | — | Put away and kept. |
 | `avokaido:visitor` | `token` | On open, when the host app gave `getIdToken`. |
+| `avokaido:navigated` | `id` | Right after an `avokaido:navigate` it took: the chat then does not move the page itself. |
 | `avokaido:theme` | `vars`, `matched`, `from: "page" \| "repo" \| "avo"`, `src`, `full` | On `ready` and before every `open`. `vars` are the `--w-*` and `--p-*` CSS variables to apply; `src` says, per role, `{ tag, text }` where it came from; `full` as in `layout`. |
 | `avokaido:layout` | `full: boolean` | On `ready`, before every `open`, and whenever the window crosses into or out of full screen (under 561 px wide or 441 px tall), where the chat hides its resize arc and corners. |
 

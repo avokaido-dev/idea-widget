@@ -1024,3 +1024,21 @@ describe("moving the box by the page's own header", () => {
     assert.match(core, /overlay\.classList\.remove\("moving", "taken"\);[\s\S]*?overlay\.classList\.remove\("moving", "taken"\);/);
   });
 });
+
+describe("a button under an answer, taking the page there", () => {
+  it("takes only a plain path on this site", () => {
+    assert.match(core, /!\/\^\\\/\(\?!\\\/\)\[A-Za-z0-9\\-\._~\\\/%\]\*\$\/\.test\(path\)/);
+    assert.match(core, /path\.split\("\/"\)\.indexOf\("\.\."\) !== -1/);
+    assert.match(core, /location\.assign\(path\)/);
+    assert.equal(/location\.href\s*=/.test(core), false, "never an address of somebody else's choosing");
+  });
+
+  it("tells the chat it went, and lets the app route it itself", () => {
+    assert.match(core, /postToFrame\(\{ type: "avokaido:navigated", id: id \}\)/);
+    assert.match(core, /new CustomEvent\("avokaido:navigate", \{\s+detail: \{ path: path \},\s+cancelable: true,/);
+  });
+
+  it("opens the box again only within a minute of going", () => {
+    assert.match(core, /if \(at && Date\.now\(\) - at < 60000\) open\(\);/);
+  });
+});

@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.20.0 — one script tag on your page.
+ * Avokaido idea widget 1.21.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -1750,6 +1750,11 @@ function createIdeaWidget(options) {
    * give it one.
    */
   var LAUNCHER_KEY = "avokaido.ideas.launcher";
+
+  /** Set just before a button under an answer sends the page somewhere
+   *  (`navigateFor`), so the box opens again on the page it lands on. A time,
+   *  and nothing about anybody; read once and removed. */
+  var REOPEN_KEY = "avokaido.ideas.reopen";
   /** `"icon"` or `"floating"` when the team chose one, else null. */
   var teamLauncher = null;
   /** This person's own choice, `"icon"` or `"floating"`, or null for none. */
@@ -4022,6 +4027,72 @@ function createIdeaWidget(options) {
   }
 
   /**
+   * A BUTTON UNDER AN ANSWER, PRESSED: take this page to `path`.
+   *
+   * The chat answers questions about this app from the app's own guide, and
+   * offers its pages as buttons. Pressed, it asks for the page here, because
+   * only this script may move it. ONLY A PLAIN PATH ON THIS SITE: the chat made
+   * it from the app's guide, but this is the page that moves, so it is
+   * checked again — no other site, no `javascript:`, nothing to fill in.
+   *
+   * The app gets the first word. `avokaido:navigate` is cancelable: an app that
+   * routes itself calls `preventDefault()` and takes `event.detail.path` to
+   * its router, and the box stays open. Otherwise the browser goes there, and
+   * the box opens again on the page it lands on ([REOPEN_KEY]). Either way the
+   * chat is told it went (`avokaido:navigated`), so it does not move the page
+   * itself as it does for a widget from before this.
+   */
+  function navigateFor(data) {
+    var path = data && typeof data.path === "string" ? data.path : "";
+    var id = data && typeof data.id === "number" ? data.id : 0;
+    if (
+      path.length > 200 ||
+      !/^\/(?!\/)[A-Za-z0-9\-._~\/%]*$/.test(path) ||
+      path.split("/").indexOf("..") !== -1
+    ) {
+      return;
+    }
+    postToFrame({ type: "avokaido:navigated", id: id });
+    var routed = false;
+    try {
+      routed = !document.dispatchEvent(
+        new CustomEvent("avokaido:navigate", {
+          detail: { path: path },
+          cancelable: true,
+        })
+      );
+    } catch (e) {
+      /* No CustomEvent: the browser goes there, below. */
+    }
+    if (routed) return;
+    try {
+      localStorage.setItem(REOPEN_KEY, String(Date.now()));
+    } catch (e) {
+      /* Storage blocked: the box simply stays shut on the next page. */
+    }
+    location.assign(path);
+  }
+
+  /**
+   * BACK WHERE THE BUTTON TOOK THEM. A page [navigateFor] sent somewhere with
+   * a plain navigation is a new page, and this script starts again on it with
+   * the box shut. The note left before going says to open it — once, and only
+   * within a minute, so a note from a navigation that never happened opens
+   * nothing later. The chat itself picks up its conversation as it does after
+   * any reload.
+   */
+  function reopenAfterNavigate() {
+    var at = 0;
+    try {
+      at = Number(localStorage.getItem(REOPEN_KEY)) || 0;
+      localStorage.removeItem(REOPEN_KEY);
+    } catch (e) {
+      return;
+    }
+    if (at && Date.now() - at < 60000) open();
+  }
+
+  /**
    * Messages from the page inside the frame.
    *
    * ORIGIN-CHECKED, AND SOURCE-CHECKED. Any page can postMessage to any window,
@@ -4076,6 +4147,8 @@ function createIdeaWidget(options) {
       setTimeout(function () {
         close("submitted");
       }, 2200);
+    } else if (type === "avokaido:navigate") {
+      navigateFor(event.data);
     } else if (type === "avokaido:close") {
       close("page");
     } else if (type === "avokaido:dismiss") {
@@ -4476,6 +4549,16 @@ function createIdeaWidget(options) {
     } else {
       start();
     }
+  }
+
+  // Sent here by a button under an answer: open again, after the launcher.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", reopenAfterNavigate);
+    teardown.push(function () {
+      document.removeEventListener("DOMContentLoaded", reopenAfterNavigate);
+    });
+  } else {
+    setTimeout(reopenAfterNavigate, 0);
   }
 
   /**

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.21.0
+
+**A button under an answer takes the page there.** The box can now answer
+simple questions about the app it sits on ("where are receipts?") and offer
+the page as a button. Pressed, the chat asks for it (`avokaido:navigate`), and
+this script checks it is a plain path on this site, says it took it
+(`avokaido:navigated`), and goes there.
+
+- The app gets the first word: a cancelable `avokaido:navigate` event on the
+  page, whose `detail.path` an app that routes itself can take to its router
+  with `preventDefault()`. The box then stays open.
+- Otherwise it is a normal navigation, and the box opens again on the page it
+  lands on (once, within a minute).
+- A chat from before this never sends the message; an older script never
+  answers it, and the chat then moves the page itself from the press.
+
 ## 1.20.0
 
 **A preview of the change fills the whole window.** "Open bigger" on a
