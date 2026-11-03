@@ -14,12 +14,23 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { dirname, join } from "node:path";
 import {
+  anonymousId,
+  decideAudience,
   flattenContext,
+  fnv1a32,
   idTokenWithin,
+  languagesOf,
+  matchesLocale,
   matchesPath,
+  mergeAnswer,
+  normaliseLang,
+  passesResidual,
   readUser,
+  rolloutBucket,
   routeOf,
+  timeZoneNow,
   visitorBody,
+  watchesRoute,
 } from "../src/widget.js";
 import { fileURLToPath } from "node:url";
 
@@ -554,7 +565,9 @@ describe("looking like the site", () => {
 
   it("takes the team's design system from the audience check, before the button shows", () => {
     assert.match(core, /var system = systemTheme\(body\.theme\);\s+if \(system && JSON\.stringify\(system\) !== JSON\.stringify\(teamTheme\)\) \{\s+teamTheme = system;/);
-    assert.match(core, /if \(lookChanged && host\) readTheme\(\);[\s\S]{0,240}if \(rules\.paths\.length > 0\) watchRoute\(\);/);
+    // The look is settled before the visitor is asked about, which is what
+    // first shows the button (`settle`).
+    assert.match(core, /if \(lookChanged && host\) readTheme\(\);[\s\S]{0,240}checkVisitor\(\);\n\s+\}\)/);
   });
 
   it("reports only a look read off the page, three colours, once a view, with no credentials", () => {
@@ -755,7 +768,8 @@ describe("who sees the button", () => {
   });
 
   it("stays hidden when the link cannot be reached", () => {
-    assert.match(core, /\.catch\(function \(\) \{ done\(false\); \}\)/);
+    assert.match(core, /\.catch\(function \(\) \{ done\(\{ show: false \}\); \}\)/);
+    assert.match(core, /return r\.ok \? r\.json\(\) : \{ show: false \};/);
   });
 
   it("cannot go out ahead of its backend and hide every button", () => {
@@ -777,6 +791,156 @@ describe("who sees the button", () => {
   it("follows identity set by attribute, for the Dart wrapper", () => {
     assert.match(tag, /attributeFilter: \["data-user-id", "data-user-email", "data-user-traits"\]/);
     assert.match(tag, /window\.avokaido\.identify = widget\.identify/);
+  });
+});
+
+describe("who sees the button: the half the server leaves to the page", () => {
+  const at = (pathname, hash = "") => ({ pathname, hash });
+  const env = (over = {}) => ({ loc: at("/app/x"), languages: ["sv-se", "en"], vid: "v1", ...over });
+
+  it("normalises a language tag the way the server does", () => {
+    assert.equal(normaliseLang(" EN_us "), "en-us");
+    assert.equal(normaliseLang(null), "");
+    assert.deepEqual(languagesOf({ languages: ["sv-SE", " en "], language: "de" }), ["sv-se", "en"]);
+    assert.deepEqual(languagesOf({ languages: [], language: "de_DE" }), ["de-de"]);
+    assert.deepEqual(languagesOf({ language: "fr" }), ["fr"]);
+    assert.deepEqual(languagesOf(undefined), []);
+  });
+
+  it("matches a language by itself or by its region, for any of the visitor's languages", () => {
+    assert.equal(matchesLocale([], ["xx"]), true);
+    assert.equal(matchesLocale(undefined, []), true);
+    assert.equal(matchesLocale(["sv"], ["sv"]), true);
+    assert.equal(matchesLocale(["sv"], ["sv-se"]), true);
+    assert.equal(matchesLocale(["sv-se"], ["sv"]), false, "a region asks for that region");
+    assert.equal(matchesLocale(["sv"], ["svk"]), false, "not a prefix of letters");
+    assert.equal(matchesLocale(["de"], ["en", "fr", "de-ch"]), true, "any of the visitor's");
+    assert.equal(matchesLocale(["de"], []), false);
+    assert.equal(matchesLocale(["SV"], ["sv_SE"]), true, "either side unnormalised");
+  });
+
+  it("hashes with FNV-1a 32-bit over UTF-8, the server's function", () => {
+    assert.equal(fnv1a32(""), 0x811c9dc5);
+    assert.equal(fnv1a32("a"), 0xe40c292c);
+    assert.equal(fnv1a32("foobar"), 0xbf9cf968);
+    assert.equal(fnv1a32("ö"), fnv1a32("\u00f6"));
+    assert.notEqual(fnv1a32("ö"), fnv1a32("o"), "bytes, not code points truncated");
+    assert.match(core, /Math\.imul\(h, 0x01000193\) >>> 0/);
+    assert.match(core, /unescape\(encodeURIComponent\(/);
+  });
+
+  it("deals a visitor a bucket that is stable, below 100, and changes with the salt", () => {
+    const b = rolloutBucket("anna", "s1");
+    assert.equal(b, rolloutBucket("anna", "s1"));
+    assert.ok(b >= 0 && b < 100);
+    assert.equal(b, fnv1a32("s1:anna") % 100, "salt, colon, id");
+    const spread = new Set();
+    for (let i = 0; i < 200; i++) spread.add(rolloutBucket("anna", "salt" + i));
+    assert.ok(spread.size > 50, "a new salt deals the visitors out again");
+  });
+
+  it("lets a rollout in below its percent and never at 0, always at 100", () => {
+    const b = rolloutBucket("v1", "s");
+    const roll = (percent) => passesResidual({ rollout: { percent, salt: "s" } }, env());
+    assert.equal(roll(0), false);
+    assert.equal(roll(100), true);
+    assert.equal(roll(b), false, "the boundary is exclusive");
+    assert.equal(roll(b + 1), true);
+    assert.equal(passesResidual({ rollout: { percent: "x", salt: "s" } }, env()), false, "junk fails closed");
+  });
+
+  it("asks for the visitor id only when a rollout is in the way", () => {
+    let asked = 0;
+    const vid = () => (asked++, "v1");
+    assert.equal(passesResidual({ paths: ["/app/*"] }, env({ vid })), true);
+    assert.equal(asked, 0);
+    assert.equal(passesResidual({ rollout: { percent: 100, salt: "s" } }, env({ vid })), true);
+    assert.equal(asked, 1);
+  });
+
+  it("passes a residual only when every rule left in it holds", () => {
+    assert.equal(passesResidual({}, env()), true, "settled by the server");
+    assert.equal(passesResidual(null, env()), false, "settled against the visitor");
+    assert.equal(passesResidual(undefined, env()), false);
+    assert.equal(passesResidual({ paths: ["/app/*"] }, env()), true);
+    assert.equal(passesResidual({ paths: ["/settings"] }, env()), false);
+    assert.equal(passesResidual({ locales: ["sv"] }, env()), true);
+    assert.equal(passesResidual({ locales: ["de"] }, env()), false);
+    assert.equal(passesResidual({ paths: ["/app/*"], locales: ["de"] }, env()), false, "AND within a group");
+    assert.equal(passesResidual({ paths: ["/app/*"], locales: ["en"], rollout: { percent: 100, salt: "s" } }, env()), true);
+  });
+
+  it("decides a 1.18-shaped answer from show and paths, as every widget before 1.21", () => {
+    assert.equal(decideAudience({ show: true, paths: [] }, env()), true);
+    assert.equal(decideAudience({ show: true }, env()), true);
+    assert.equal(decideAudience({ show: true, paths: ["/app/*"] }, env()), true);
+    assert.equal(decideAudience({ show: true, paths: ["/settings"] }, env()), false);
+    assert.equal(decideAudience({ show: false, paths: [] }, env()), false);
+    assert.equal(decideAudience(null, env()), false);
+  });
+
+  it("shows for an answer with groups when some anyOf passes and no noneOf does", () => {
+    assert.equal(decideAudience({ show: true, anyOf: [], noneOf: [] }, env()), true, "no groups: everybody");
+    assert.equal(decideAudience({ show: true, anyOf: [null], noneOf: [] }, env()), false, "null never passes");
+    assert.equal(decideAudience({ show: true, anyOf: [{}], noneOf: [] }, env()), true, "{} passes");
+    assert.equal(decideAudience({ show: true, anyOf: [null, { paths: ["/app/*"] }], noneOf: [] }, env()), true, "OR");
+    assert.equal(decideAudience({ show: true, anyOf: [null, { paths: ["/x"] }], noneOf: [] }, env()), false);
+    assert.equal(decideAudience({ show: true, anyOf: [], noneOf: [{ locales: ["sv"] }] }, env()), false, "NOT");
+    assert.equal(decideAudience({ show: true, anyOf: [], noneOf: [null] }, env()), true, "a failed exclusion excludes nobody");
+    assert.equal(decideAudience({ show: true, anyOf: [{}], noneOf: [{}] }, env()), false, "an exclusion the server settled");
+    assert.equal(decideAudience({ show: false, anyOf: [{}], noneOf: [] }, env()), false, "show: false wins");
+    assert.equal(decideAudience({ show: true, anyOf: [], paths: ["/x"] }, env()), true, "with groups, the old paths are ignored");
+    assert.equal(decideAudience({ show: true, anyOf: [{ rollout: { percent: 0, salt: "s" } }] }, env()), false);
+    assert.equal(decideAudience({ show: true, anyOf: [{ rollout: { percent: 100, salt: "s" } }] }, env()), true);
+  });
+
+  it("lays the POST's verdict over the GET's answer without writing to it", () => {
+    const got = { show: true, paths: ["/a"], visitor: true, ask: true, anyOf: [null], noneOf: [], look: "avo" };
+    const merged = mergeAnswer(got, { show: true, anyOf: [{}], noneOf: [{ paths: ["/b"] }] });
+    assert.deepEqual(merged, { show: true, paths: ["/a"], visitor: true, ask: true, anyOf: [{}], noneOf: [{ paths: ["/b"] }], look: "avo" });
+    assert.deepEqual(got.anyOf, [null], "the GET answer is untouched");
+    assert.equal(mergeAnswer(got, { show: false }).show, false, "a failed check hides");
+    assert.deepEqual(mergeAnswer(got, { show: false }).anyOf, [null], "an older backend's POST leaves the groups");
+    assert.equal(mergeAnswer(got, null), got);
+    assert.equal(mergeAnswer(null, { show: true }), null);
+  });
+
+  it("watches the route only when some answer leaves pages to the page", () => {
+    assert.equal(watchesRoute(null), false);
+    assert.equal(watchesRoute({ show: true, paths: [] }), false);
+    assert.equal(watchesRoute({ show: true, paths: ["/a"] }), true);
+    assert.equal(watchesRoute({ show: true, anyOf: [], noneOf: [], paths: ["/a"] }), false, "with groups, the old paths are ignored");
+    assert.equal(watchesRoute({ show: true, anyOf: [null, {}], noneOf: [] }), false);
+    assert.equal(watchesRoute({ show: true, anyOf: [{ paths: ["/a"] }], noneOf: [] }), true);
+    assert.equal(watchesRoute({ show: true, anyOf: [], noneOf: [{ paths: ["/a"] }] }), true);
+    assert.match(core, /if \(!watching && watchesRoute\(now\)\) watchRoute\(\);/);
+    assert.match(core, /if \(destroyed \|\| watching\) return;\n\s+watching = true;/);
+  });
+
+  it("makes an anonymous id of sixteen base-36 characters, kept in storage and never sent", () => {
+    assert.match(anonymousId(), /^[0-9a-z]{16}$/);
+    assert.notEqual(anonymousId(), anonymousId());
+    assert.match(core, /var VID_KEY = "avokaido\.ideas\.vid";/);
+    assert.match(core, /NEVER SENT ANYWHERE/);
+    assert.match(core, /localStorage\.setItem\(VID_KEY, made\)/);
+    // The id reaches the hash and nothing else: not a body, not a header, not the frame.
+    assert.equal(/(?<!function )visitorId\(\)/.test(core), false, "handed over as a function, read only by the hash");
+    assert.match(core, /vid: visitorId,/);
+    assert.equal(/postToFrame\([^)]*vid/.test(core), false);
+  });
+
+  it("asks a backend with groups whenever it says to, about nobody as well, with the time zone", () => {
+    assert.match(core, /if \(groups \? !answer\.ask : !answer\.visitor\) return done\(null\);/);
+    assert.match(core, /if \(!groups && !hasUser\(\)\) return done\(\{ show: false \}\);/);
+    assert.match(core, /visitor: asking \? visitorBody\(asking\) : null,\n\s+tz: timeZoneNow\(\),/);
+    assert.equal(typeof timeZoneNow(), "string");
+    assert.match(core, /if \(!body\.show && !\(groups && body\.ask\)\)/);
+  });
+
+  it("still shows to all on a 404, and decides as 1.18 when the answer has no groups", () => {
+    assert.match(core, /r\.status === 404\) return \{ show: true, paths: \[\], visitor: false \}/);
+    assert.equal(decideAudience({ show: true, paths: [], visitor: false }, env()), true);
+    assert.match(core, /if \(!Array\.isArray\(answer\.anyOf\)\) \{\n\s+return matchesPath\(/);
   });
 });
 
@@ -872,7 +1036,7 @@ describe("a visitor proven by the app's own sign-in", () => {
 
   it("sends the token as a bearer header, still with no cookies", () => {
     assert.match(core, /if \(token\) headers\.Authorization = "Bearer " \+ token;/);
-    assert.match(core, /idTokenWithin\(asking\.getIdToken, ID_TOKEN_WAIT_MS\)/);
+    assert.match(core, /idTokenWithin\(asking \? asking\.getIdToken : null, ID_TOKEN_WAIT_MS\)/);
     assert.match(core, /method: "POST",\s+credentials: "omit",\s+headers: headers,/);
     assert.equal(/credentials: "include"/.test(core), false);
   });

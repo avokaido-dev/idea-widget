@@ -166,7 +166,8 @@ await AvokaidoIdeas.install(key: 'avk_YOUR_KEY');
 ## Choosing who sees it
 
 Each link can limit **who the button is shown to**, in **Feature ideas → Embed
-the suggestion widget → (globe icon)**. Any rule you set must hold; leave them
+the suggestion widget → (globe icon)**. Rules sit in groups: every rule of a
+group must hold, any group admits, and a group can exclude instead. Leave them
 all empty and everybody sees it, which is how every link starts.
 
 | Rule | Example | Needs your page to say who is looking |
@@ -176,6 +177,9 @@ all empty and everybody sees it, which is how every link starts.
 | These people | `anna@acme.com`, `@pilot-customer.io` | yes — an email |
 | Visitors whose traits match | `role = admin, owner` · `plan = pro` | yes — traits |
 | On these pages | `/settings*`, `/app/*`, `/#/admin*` | no |
+| In these countries | `SE`, `NO` | no — decided from the browser's time zone |
+| Speaking these languages | `sv`, `en-GB` | no — the browser's languages; `sv` covers `sv-SE` |
+| A percentage of visitors | `10 %` | no — a stable bucket per visitor, see below |
 
 Tell the widget who is looking with attributes:
 
@@ -264,6 +268,17 @@ no path of yours is sent to decide them, and a single-page app can change screen
 without asking again. Traits are matched case-insensitively, and a list
 (`"roles": ["editor", "admin"]`) matches if any value does. `*` in a page
 pattern matches anything; a pattern without `#` ignores the hash.
+
+**Countries, languages and the percentage need nothing from your page.** A
+country is read from the time zone the browser states (a region, never a
+position), which the widget sends with the check. Languages are the browser's
+own list, compared on the page and never sent. A percentage puts each visitor
+in a stable bucket from their id, else their email, else an anonymous id the
+widget makes up once and keeps in this browser's storage (`avokaido.ideas.vid`);
+that id is never sent anywhere — the bucket is worked out on the page from the
+id and a salt we hand over. The same person, signed in, lands in the same
+bucket on every browser; a visitor nobody named lands in the same bucket on
+every visit from the same browser.
 
 **This chooses who sees the button. It is not access control.** Your page
 describes its own visitor, so anybody who can edit it — or who posts to the
@@ -718,6 +733,11 @@ what your page chose to say in `data-user-*` or `identify()`. It is compared
 with the link's rules and dropped; see
 [Choosing who sees it](#choosing-who-sees-it). A link open to everybody is asked
 only whether it is switched on, and nothing about the visitor is sent.
+
+**The browser's time zone — only for a link whose rules need asking about the
+visitor**, as `tz` on that same check, for a link limited to certain countries.
+A region, never a position; compared and dropped like the rest. The browser's
+languages and the anonymous id of a percentage rollout never leave the page.
 
 **The signed-in user's ID token — only when you gave `getIdToken`**, and only
 to a link limited to certain visitors: as the `Authorization` header of that
