@@ -444,6 +444,7 @@ Script tag attributes, and the equivalent options:
 | `data-context` | `context` | none | Where in your app the person is, so the interview need not ask. Re-read on every open — keep it current as they navigate. The option also takes an object or a function; see [Telling it where the person is](#telling-it-where-the-person-is). |
 | `data-route` | `route` | on | Send the page's path and hash, so a suggestion says which screen it is about. The query string is never sent either way. `data-route="off"` for an app whose paths name things that must not leave it; see [What it sends](#what-it-sends). |
 | `data-page-copy` | `pageCopy` | on | Let the chat take a copy of the page when somebody asks to see their suggestion on it before sending, for a before-and-after. Only on that answer. `data-page-copy="off"` for a page whose content must not leave it; see [What it sends](#what-it-sends). |
+| — | `actions` | none | What the box may do in your app when somebody asks and confirms: your own functions, so code only — `widget.setActions()`, or `window.avokaido.actions` with the script tag. See [Letting the box run things in your app](#letting-the-box-run-things-in-your-app). |
 | `data-user-id` · `data-user-email` · `data-user-traits` | `user` | none | Who is looking, for a link limited to certain visitors; traits are JSON. Watched for changes. See [Choosing who sees it](#choosing-who-sees-it). |
 | `data-origin` | `origin` | the script's own origin | Where the interview lives. The script-tag build defaults to the origin it was served from, so an embed served from a preview channel frames the preview. **Set this explicitly if you serve the file from a third-party CDN** (jsDelivr, unpkg) or self-host it — otherwise the widget frames the CDN. |
 
@@ -557,7 +558,9 @@ document.addEventListener("avokaido:pending", (e) => {
 ```
 
 `avokaido:visibility` (`detail.shown`) is described under
-[Your own menu item, or an icon](#your-own-menu-item-or-an-icon).
+[Your own menu item, or an icon](#your-own-menu-item-or-an-icon), and
+`avokaido:action` (`detail.actionId`, `args`, `ok`) under
+[Letting the box run things in your app](#letting-the-box-run-things-in-your-app).
 
 `reason` is the only distinction worth anything in that number: it separates a
 suggestion that was sent from one abandoned.
@@ -569,6 +572,97 @@ signed in inside the box, who sent a suggestion in order to build it. You still
 get `avokaido:submitted` either way — a submission that keeps the box open is
 still a submission, and the number you are counting should not change shape
 depending on who sent it.
+
+
+### Taking people to a page
+
+When the box answers a question about your app ("where are receipts?"), it can offer the page as a button. Pressed, the widget sends the page there itself, with a normal navigation, and opens the box again on the page it lands on. An app that routes itself can do it without a reload:
+
+```js
+document.addEventListener("avokaido:navigate", (event) => {
+  event.preventDefault();            // the widget won't navigate
+  router.push(event.detail.path);    // a plain path on your own site, like "/receipt"
+});
+```
+
+## Letting the box run things in your app
+
+The box can also *do* something in your app when somebody asks it to —
+"archive this project", "invite Anna as an editor" — but only what your app
+registers, and only after the person has said yes. Each action is one of
+your own functions, with a name and a sentence the chat chooses by:
+
+```js
+window.avokaido.actions.register({
+  id: "archive-project",                       // a-z, 0-9 and -, up to 40
+  name: "Archive project",                     // up to 40
+  about: "Archives the project on screen.",    // up to 200 — what the chat reads
+  params: [                                    // up to 6
+    { name: "reason", about: "Why, in a few words.", required: true },
+  ],
+  run: async ({ reason }) => {
+    const r = await api.archive(currentProject.id, reason);  // your session, your checks
+    return r.ok ? { ok: true, message: "Archived." } : { ok: false, message: r.error };
+  },
+});
+window.avokaido.actions.unregister("archive-project");
+window.avokaido.actions.set([ /* the whole list */ ]);   // replaces it
+```
+
+With the package, pass `actions` to `createIdeaWidget` and call
+`widget.setActions(list)` to replace it. Either way, **change the list as
+the screen changes**: register what makes sense where the person is, and
+take it away when they leave. The box is told the list each time it opens.
+
+**How it goes.** The model never touches your page. It may only pick one of
+the actions you registered and fill in its values; the box then shows the
+person what it is about to do, with the values, and asks. Only when they
+press **Do it** does the box ask the widget to run it, and the widget calls
+your `run` with `{ paramName: "value" }` — only the params you declared, each
+a string, a required one never missing. Return `{ ok, message }` (or
+nothing, which counts as done); the message, up to 300 characters, is what
+the box tells the person. A throw or a rejected promise reads as
+`ok: false` with its message.
+
+**Who may do it is your app's call.** `run` runs in your page, in the
+signed-in person's own session, with your API's own checks — exactly as if
+they had pressed your button. The widget carries no credential, sends none,
+and decides nothing about who may do what. Do not register what this person
+may not do, and check again in `run` anyway: what a model fills in is
+input, not a promise.
+
+**Only the description leaves your page.** The chat is told each action's
+`id`, `name`, `about` and `params` — never `run`, and nothing else. Do not
+put a customer's data in a name or a sentence.
+
+**The caps**, which are the chat's too: at most 20 actions; `id` matches
+`/^[a-z0-9][a-z0-9-]*$/`, up to 40 characters; `name` up to 40; `about` up
+to 200; at most 6 `params`, each `name` matching the same pattern, up to 30,
+with an `about` up to 120. An action that does not fit is left out whole —
+a name cut short would describe something else — with one warning in the
+console.
+
+**Before the script has loaded**, `window.avokaido.actions` is not there
+yet. A helper that works either way queues the calls, and the widget runs
+them in order when it starts:
+
+```js
+export function avokaidoActions() {
+  const avo = (window.avokaido ??= {});
+  return (avo.actions ??= {
+    queue: [],
+    set(list) { this.queue.push(["set", list]); },
+    register(action) { this.queue.push(["register", action]); },
+    unregister(id) { this.queue.push(["unregister", id]); },
+  });
+}
+
+avokaidoActions().register({ id: "archive-project", /* … */ });
+```
+
+There is no `data-actions` attribute: a function cannot live in one. After
+each ask, `avokaido:action` fires on `document` with `detail: { actionId,
+args, ok }` — `ok: false` when it failed or was refused.
 
 ## The faint badge in the corner
 
@@ -744,6 +838,12 @@ to a link limited to certain visitors: as the `Authorization` header of that
 one check, verified and dropped like the rest. Never a cookie
 (`credentials: "omit"`), never in a URL.
 
+**What your app lets the box do — only the actions you registered**, to the
+chat in the box on every open: each one's `id`, `name`, `about` and `params`,
+as you wrote them. Never `run`, and nothing read off your page. When the
+person confirms one, the values the chat filled in come back to your `run`;
+what `run` returns as `message` goes to the chat.
+
 **The look it matched — to the chat in the box**, so the chat can draw
 in your colours: the colours, fonts, size and radius it worked out, and
 whether each was read, worked out or Avo's default.
@@ -810,14 +910,18 @@ From the chat to the widget:
 | `avokaido:expand` / `avokaido:collapse` | — | The console's 768 × 640, and back. |
 | `avokaido:wide` / `avokaido:narrow` | — | The centred preview panel over a scrim, and back. |
 | `avokaido:cover` / `avokaido:uncover` | — | The chat shows its own scrim: the widget's × and grip go under it. |
+| `avokaido:action` | `id`, `actionId`, `args` | The person pressed **Do it** on an action the app registered. `args` is `{ name: value }`. The widget calls that action's `run` with the declared params only, and answers `avokaido:acted`. |
+| `avokaido:navigate` | `id`, `path` | A button under an answer to a question about the app, pressed. Only a plain path on this site: answers `avokaido:navigated`, then emits a cancelable `avokaido:navigate` on the page, and goes there itself unless the page called `preventDefault()` — opening the box again on the page it lands on. |
 
 From the widget to the chat:
 
 | Message | Payload | When |
 |---|---|---|
-| `avokaido:open` | `route?`, `at?`, `openMs?` | Every open (and again once the chat has painted). |
+| `avokaido:open` | `route?`, `at?`, `openMs?`, `actions?` | Every open (and again once the chat has painted). `actions` is what the app registered, as `[{ id, name, about, params: [{ name, about, required }] }]` — never `run` — and absent when there are none. |
 | `avokaido:closed` | — | Put away and kept. |
 | `avokaido:visitor` | `token` | On open, when the host app gave `getIdToken`. |
+| `avokaido:navigated` | `id` | Right after an `avokaido:navigate` it took: the chat then does not move the page itself. |
+| `avokaido:acted` | `id`, `ok`, `message` | After every `avokaido:action`, with its `id`: whether it was done, and what to tell the person (up to 300 characters, `""` for nothing). An unknown `actionId` is `ok: false`, `"No such action"`; a missing required param `"Missing <name>"`; a throw or rejection its message. |
 | `avokaido:theme` | `vars`, `matched`, `from: "page" \| "repo" \| "avo"`, `src`, `full` | On `ready` and before every `open`. `vars` are the `--w-*` and `--p-*` CSS variables to apply; `src` says, per role, `{ tag, text }` where it came from; `full` as in `layout`. |
 | `avokaido:layout` | `full: boolean` | On `ready`, before every `open`, and whenever the window crosses into or out of full screen (under 561 px wide or 441 px tall), where the chat hides its resize arc and corners. |
 

@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 import {
   anonymousId,
   decideAudience,
+  describeActions,
   flattenContext,
   fnv1a32,
   idTokenWithin,
@@ -25,9 +26,11 @@ import {
   mergeAnswer,
   normaliseLang,
   passesResidual,
+  readActions,
   readUser,
   rolloutBucket,
   routeOf,
+  runAction,
   timeZoneNow,
   visitorBody,
   watchesRoute,
@@ -470,6 +473,7 @@ describe("messages from the framed page", () => {
     "x",
     "grip",
     "pending",
+    "action",
   ]) {
     it(`handles avokaido:${type}`, () => {
       assert.ok(dist.includes(`"avokaido:${type}"`), type);
@@ -1186,5 +1190,155 @@ describe("moving the box by the page's own header", () => {
 
   it("hands the pointer back to the frame however the drag ends", () => {
     assert.match(core, /overlay\.classList\.remove\("moving", "taken"\);[\s\S]*?overlay\.classList\.remove\("moving", "taken"\);/);
+  });
+});
+
+describe("a button under an answer, taking the page there", () => {
+  it("takes only a plain path on this site", () => {
+    assert.match(core, /!\/\^\\\/\(\?!\\\/\)\[A-Za-z0-9\\-\._~\\\/%\]\*\$\/\.test\(path\)/);
+    assert.match(core, /path\.split\("\/"\)\.indexOf\("\.\."\) !== -1/);
+    assert.match(core, /location\.assign\(path\)/);
+    assert.equal(/location\.href\s*=/.test(core), false, "never an address of somebody else's choosing");
+  });
+
+  it("tells the chat it went, and lets the app route it itself", () => {
+    assert.match(core, /postToFrame\(\{ type: "avokaido:navigated", id: id \}\)/);
+    assert.match(core, /new CustomEvent\("avokaido:navigate", \{\s+detail: \{ path: path \},\s+cancelable: true,/);
+  });
+
+  it("opens the box again only within a minute of going", () => {
+    assert.match(core, /if \(at && Date\.now\(\) - at < 60000\) open\(\);/);
+  });
+});
+
+describe("the app's own actions, run by the box", () => {
+  const tag = readFileSync(join(root, "src/script-tag.js"), "utf8");
+  const ok = (over = {}) => ({
+    id: "archive-project",
+    name: "Archive project",
+    about: "Archives the project on screen.",
+    params: [{ name: "reason", about: "Why, in a few words.", required: true }],
+    run: () => {},
+    ...over,
+  });
+  const quietly = (fn) => {
+    const warn = console.warn;
+    const calls = [];
+    console.warn = (...a) => calls.push(a);
+    try {
+      return { out: fn(), calls };
+    } finally {
+      console.warn = warn;
+    }
+  };
+
+  it("keeps an action that fits, as the chat will be told it", () => {
+    const { out, calls } = quietly(() => readActions([ok()]));
+    assert.equal(calls.length, 0);
+    assert.deepEqual(describeActions(out), [{
+      id: "archive-project",
+      name: "Archive project",
+      about: "Archives the project on screen.",
+      params: [{ name: "reason", about: "Why, in a few words.", required: true }],
+    }]);
+    assert.deepEqual(describeActions(readActions([ok({ params: undefined })]))[0].params, []);
+  });
+
+  it("drops what does not fit the caps, and warns once", () => {
+    const bad = [
+      ok({ id: "Archive" }),
+      ok({ id: "-archive" }),
+      ok({ id: "a".repeat(41) }),
+      ok({ name: "n".repeat(41) }),
+      ok({ name: "" }),
+      ok({ about: "a".repeat(201) }),
+      ok({ run: "not a function" }),
+      ok({ params: "reason" }),
+      ok({ params: Array.from({ length: 7 }, (_, i) => ({ name: "p" + i, about: "x" })) }),
+      ok({ params: [{ name: "Reason", about: "x" }] }),
+      ok({ params: [{ name: "r".repeat(31), about: "x" }] }),
+      ok({ params: [{ name: "reason", about: "a".repeat(121) }] }),
+      ok({ params: [{ name: "reason", about: "x" }, { name: "reason", about: "y" }] }),
+      null,
+    ];
+    const { out, calls } = quietly(() => readActions(bad));
+    assert.equal(out.length, 0);
+    assert.equal(calls.length, 1);
+    assert.match(String(calls[0][0]), /14 action\(s\) did not fit/);
+  });
+
+  it("keeps exactly the edges of every cap", () => {
+    const edge = ok({
+      id: "a".repeat(40),
+      name: "n".repeat(40),
+      about: "a".repeat(200),
+      params: Array.from({ length: 6 }, (_, i) => ({ name: "p" + i + "-".repeat(28), about: "x".repeat(120) })),
+    });
+    assert.equal(quietly(() => readActions([edge])).out.length, 1);
+  });
+
+  it("keeps at most 20, and each id once", () => {
+    const many = Array.from({ length: 22 }, (_, i) => ok({ id: "a" + i }));
+    const { out, calls } = quietly(() => readActions([ok({ id: "a0" }), ...many]));
+    assert.equal(out.length, 20);
+    assert.deepEqual(out.map((a) => a.id), many.slice(0, 20).map((a) => a.id));
+    assert.equal(calls.length, 1);
+    assert.deepEqual(quietly(() => readActions(undefined)).out, []);
+  });
+
+  it("never lets run reach the chat", () => {
+    const told = describeActions(readActions([ok()]));
+    assert.equal(JSON.stringify(told).includes("run"), false);
+    // postMessage clones: a function in it would throw and lose the open.
+    assert.deepEqual(structuredClone(told), told);
+    assert.match(core, /if \(actions\.length\) message\.actions = describeActions\(actions\);\n\s+postToFrame\(message\);/);
+  });
+
+  it("hands run only the declared values, as strings", async () => {
+    let got;
+    const actions = readActions([ok({
+      params: [{ name: "reason", about: "x", required: true }, { name: "count", about: "y" }],
+      run(args) { got = args; },
+    })]);
+    const r = await runAction(actions, "archive-project", { reason: "done", count: 3, extra: "no", __proto__: { reason: "x" } });
+    assert.deepEqual(got, { reason: "done", count: "3" });
+    assert.deepEqual(r, { ok: true, message: "", args: { reason: "done", count: "3" } });
+  });
+
+  it("calls run on the app's own object", async () => {
+    const app = ok({ done: false, run() { this.done = true; } });
+    await runAction(readActions([app]), "archive-project", { reason: "x" });
+    assert.equal(app.done, true);
+  });
+
+  it("answers every ask, and never more than 300 characters", async () => {
+    const run = (fn, args = { reason: "x" }) => runAction(readActions([ok({ run: fn })]), "archive-project", args);
+    assert.deepEqual(await runAction([], "nope", {}), { ok: false, message: "No such action", args: {} });
+    assert.equal((await run(() => {}, {})).message, "Missing reason");
+    assert.equal((await run(() => {}, {})).ok, false);
+    assert.deepEqual(await run(() => { throw new Error("Not allowed"); }), { ok: false, message: "Not allowed", args: { reason: "x" } });
+    assert.equal((await run(() => Promise.reject(new Error("Offline")))).message, "Offline");
+    assert.equal((await run(() => Promise.reject())).ok, false);
+    assert.deepEqual(await run(async () => ({ ok: false, message: "No rights" })), { ok: false, message: "No rights", args: { reason: "x" } });
+    assert.equal((await run(() => ({ ok: true, message: "m".repeat(400) }))).message.length, 300);
+    assert.equal((await run(() => { throw new Error("e".repeat(400)); })).message.length, 300);
+    assert.equal((await run(() => ({ get ok() { throw new Error("getter"); } }))).ok, false);
+  });
+
+  it("takes avokaido:action only from its own frame, and answers avokaido:acted", () => {
+    assert.match(core, /\} else if \(type === "avokaido:action"\) \{\n\s+actFor\(event\.data\);/);
+    assert.match(core, /postToFrame\(\{ type: "avokaido:acted", id: id, ok: result\.ok, message: result\.message \}\)/);
+    assert.match(core, /emit\("action", \{ actionId: actionId, args: result\.args, ok: result\.ok \}\)/);
+    // The message handler's guards come before every type it answers.
+    const handler = core.slice(core.indexOf("function onMessage(event)"));
+    assert.ok(handler.indexOf("event.source !== frame.contentWindow") < handler.indexOf('"avokaido:action"'));
+  });
+
+  it("is set from code, before or after the script loads, and never from an attribute", () => {
+    assert.match(core, /var actions = readActions\(opts\.actions\);/);
+    assert.match(core, /setActions: function \(list\) \{\n\s+actions = readActions\(list\);/);
+    assert.match(tag, /window\.avokaido\.actions = actionsApi;/);
+    assert.match(tag, /early\.queue\.forEach/);
+    assert.equal(/data-actions/.test(dist), false);
   });
 });

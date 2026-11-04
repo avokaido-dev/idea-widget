@@ -9,7 +9,7 @@
  * nothing.
  */
 
-import { createIdeaWidget } from "./widget.js";
+import { createIdeaWidget, readActions } from "./widget.js";
 import { themeOption } from "./theme.js";
 
 /** What `data-route` (and `data-page-copy`) may say to switch it off. */
@@ -165,6 +165,52 @@ if (script) {
     // For a page with its own menu item: whether to show it. See also the
     // `avokaido:visibility` event, which says the same thing when it changes.
     window.avokaido.isShown = widget.isShown;
+
+    // WHAT THE BOX MAY RUN IN THIS APP — functions, so there is no attribute
+    // for it, only code (see readActions in widget.js):
+    //
+    //   window.avokaido.actions.register({ id, name, about, params, run });
+    //
+    // An app that registers before this deferred script ran leaves a queue
+    // there instead — the README's helper makes `{ queue, set, register,
+    // unregister }` that pushes `["set", list]`, `["register", action]` and
+    // `["unregister", id]` — and it is replayed here, in order, before the
+    // real methods take its place. A plain array left there is a `set`.
+    var registered = [];
+    var actionsApi = {
+      set: function (list) {
+        registered = Array.isArray(list) ? list.slice() : [];
+        widget.setActions(registered);
+      },
+      register: function (action) {
+        // Read alone first, so one that does not fit warns once, here, and is
+        // never kept to warn again on every later change.
+        if (!readActions([action]).length) return;
+        registered = registered.filter(function (a) {
+          return !a || a.id !== action.id;
+        });
+        registered.push(action);
+        widget.setActions(registered);
+      },
+      unregister: function (id) {
+        registered = registered.filter(function (a) {
+          return !a || a.id !== id;
+        });
+        widget.setActions(registered);
+      },
+    };
+    var early = window.avokaido.actions;
+    if (Array.isArray(early)) {
+      actionsApi.set(early);
+    } else if (early && Array.isArray(early.queue)) {
+      early.queue.forEach(function (call) {
+        var name = call && call[0];
+        if (name === "set" || name === "register" || name === "unregister") {
+          actionsApi[name](call[1]);
+        }
+      });
+    }
+    window.avokaido.actions = actionsApi;
 
     // THE SAME THING BY ATTRIBUTE, for the integrations that cannot call a
     // function — the Dart wrapper mounts through this tag and sets attributes
