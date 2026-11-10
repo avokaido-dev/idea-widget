@@ -147,6 +147,13 @@ if (script) {
       pageCopy: ROUTE_OFF.indexOf(
         String(script.getAttribute("data-page-copy") || "").toLowerCase(),
       ) < 0,
+      // And for the box reading this page and doing steps on it for the
+      // person (see src/page.js):
+      //
+      //   <script … data-page-agent="off">
+      pageAgent: ROUTE_OFF.indexOf(
+        String(script.getAttribute("data-page-agent") || "").toLowerCase(),
+      ) < 0,
     });
 
     // The other way in, for a page that already has its own button. Its

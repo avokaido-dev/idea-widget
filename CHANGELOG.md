@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.23.0
+
+**The box can help people on the page they are on.** It reads the page as a
+short outline (`avokaido:read` → `avokaido:page`), and does one step at a
+time for the person who asks (`avokaido:step` → `avokaido:stepped`): point at
+something with a note beside it, click, type, pick an option, scroll, go to a
+page here, or run one of the app's actions. New in `src/page.js`.
+
+- Every step is checked on the page, whatever the chat asked: nothing hidden,
+  disabled, gone, or part of the box; never a secret field (its value is not
+  read either), never another site; nothing inside `data-avokaido-no-act`,
+  and nothing read from `data-avokaido-private`.
+- A click that submits a form, or is named with a word there is no taking
+  back (delete, send, pay, sign, …), and every app action, waits for the
+  person's yes: answered `confirm`, done only when sent again `allowed`.
+- Typing goes through the field's own value setter and fires `input` and
+  `change`, so React and other frameworks see it.
+- `avokaido:step`, cancelable, fires on the page before every step.
+- A step that takes the page somewhere opens the box again on the page it
+  lands on, and the chat is told which step it was (`open.resumed`).
+- `pageAgent: false` / `data-page-agent="off"` turns it off for a page.
+- `avokaido:open` carries `pageAgent`. A chat from before this ignores it and
+  never reads; an older widget never sends it, and the chat then does not try.
+
+**Upstreamed from 1.21.1 (AVO-829).** A parked dock and a preview's ducked
+scrim are `visibility: hidden` as well as transparent, so an iPhone's swipes
+reach the page under them.
+
 ## 1.22.0
 
 **The box can run things in your app — only what your app registers.** An

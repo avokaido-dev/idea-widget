@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Destinations — page agent bench</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; display: grid; grid-template-columns: 220px 1fr 360px; min-height: 100vh; color: #0A1B0D; background: #FCFCFA }
+    nav { padding: 24px 16px; border-right: 1px solid #E4E4DE }
+    nav a { display: block; padding: 6px 10px; color: inherit; text-decoration: none; border-radius: 8px }
+    nav a[aria-current] { background: #EEF0EA }
+    main { padding: 32px 40px }
+    form { border: 1px solid #E4E4DE; border-radius: 12px; padding: 20px; max-width: 520px; display: grid; gap: 12px }
+    label { display: grid; gap: 4px; font-weight: 500 }
+    input, select { font: inherit; padding: 8px 10px; border: 1px solid #CFCFC8; border-radius: 8px }
+    button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #2F6B3B; background: #2F6B3B; color: #fff; cursor: pointer }
+    button.plain { background: none; color: #2F6B3B }
+    table { margin-top: 24px; border-collapse: collapse; min-width: 520px }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E4E4DE }
+    aside { border-left: 1px solid #E4E4DE; padding: 16px; font: 12px/1.45 ui-monospace, monospace; overflow: auto; max-height: 100vh; position: sticky; top: 0 }
+    aside button { font: 12px system-ui; margin: 2px 2px 8px 0 }
+    pre { white-space: pre-wrap; margin: 0 }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/agreements">Agreements</a>
+    <a href="/example/page-agent.html" aria-current="page">Destinations</a>
+    <a href="https://help.example.com/">Help</a>
+  </nav>
+  <main>
+    <h1>Destinations</h1>
+    <p>Where completed agreements are delivered besides Sign itself.</p>
+    <form id="add" onsubmit="event.preventDefault(); addRow();">
+      <h2>Add a destination</h2>
+      <label>Kind
+        <select id="kind"><option value="gdrive">Google Drive</option><option value="dropbox">Dropbox</option><option value="sp">SharePoint</option></select>
+      </label>
+      <label>Name <input id="name" required></label>
+      <label>Folder rule <input id="rule" value="/Agreements/{year}/{counterparty}"></label>
+      <label>API password <input id="secret" type="password" value="hunter2"></label>
+      <p>Connecting the account that receives it is not available yet.</p>
+      <button>Add destination</button>
+    </form>
+    <section data-avokaido-private aria-label="Billing">
+      <p>Card ending 4242, owner anna@foretag.se</p>
+    </section>
+    <table>
+      <tr><th>Name</th><th>Kind</th><th>Status</th><th></th></tr>
+      <tbody id="rows"><tr><td>test</td><td>Google Drive</td><td>Not connected yet</td><td><button class="plain" aria-label="Delete test" type="button" onclick="this.closest('tr').remove()">🗑</button></td></tr></tbody>
+    </table>
+  </main>
+  <aside>
+    <strong>Bench</strong> — what the chat would ask, run against this page.<br>
+    <button id="read">Read</button>
+    <button id="type">Type “Contracts” in Name</button>
+    <button id="pick">Pick Dropbox</button>
+    <button id="pw">Type into password</button>
+    <button id="add-step">Click Add destination</button>
+    <button id="allow">…allowed</button>
+    <button id="del">Click Delete test</button>
+    <pre id="out"></pre>
+  </aside>
+  <script type="module">
+    import { createPageHands } from "../src/page.js";
+    const out = document.getElementById("out");
+    const hands = createPageHands({
+      document, window, host: document.querySelector("aside"),
+      draw: (el, note) => { el.style.outline = "2px solid #2F6B3B"; setTimeout(() => el.style.outline = "", 1200); },
+      navigate: (p) => location.assign(p),
+      act: () => Promise.resolve({ ok: true, message: "" }),
+      ask: () => true,
+    });
+    window.addRow = () => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${document.getElementById("name").value}</td><td>${document.getElementById("kind").selectedOptions[0].text}</td><td>Not connected yet</td><td></td>`;
+      document.getElementById("rows").appendChild(tr);
+    };
+    // A "framework" that keeps its own copy of the field, as React does: it
+    // only learns a value from an input event.
+    window.frameworkName = "";
+    document.getElementById("name").addEventListener("input", (e) => { window.frameworkName = e.target.value; });
+    let page = null;
+    const refOf = (re) => (page.text.match(new RegExp("\\[(e\\d+)\\] " + re)) || [])[1];
+    const show = (x) => { out.textContent = typeof x === "string" ? x : JSON.stringify(x, null, 2); window.lastResult = x; };
+    const step = async (s) => { page = page || hands.read(); const r = await hands.run(s); page = hands.read(); show(r); return r; };
+    document.getElementById("read").onclick = () => { page = hands.read(); show(page.text); };
+    document.getElementById("type").onclick = () => step({ tool: "type", ref: (page = hands.read(), refOf('textbox "Name"')), args: { text: "Contracts" } });
+    document.getElementById("pick").onclick = () => step({ tool: "select", ref: (page = hands.read(), refOf('combobox "Kind"')), args: { option: "Dropbox" } });
+    document.getElementById("pw").onclick = () => step({ tool: "type", ref: (page = hands.read(), refOf('textbox "API password"')), args: { text: "x" } });
+    document.getElementById("add-step").onclick = () => step({ tool: "click", ref: (page = hands.read(), refOf('button "Add destination"')), args: {} });
+    document.getElementById("allow").onclick = () => step({ tool: "click", ref: (page = hands.read(), refOf('button "Add destination"')), args: {}, allowed: true });
+    document.getElementById("del").onclick = () => step({ tool: "click", ref: (page = hands.read(), refOf('button "Delete test"')), args: {} });
+    window.bench = { hands, step, read: () => (page = hands.read()) };
+  </script>
+</body>
+</html>
