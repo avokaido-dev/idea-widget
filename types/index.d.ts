@@ -120,6 +120,17 @@ export interface IdeaWidgetOptions {
    */
   pageCopy?: boolean;
   /**
+   * Whether the box may read this page and do steps on it for the person who
+   * asks — point at something, click, type, pick, scroll, go to a page here —
+   * the way they would themselves, in their own session. Secret fields, other
+   * sites, `data-avokaido-private` (never read) and `data-avokaido-no-act`
+   * (never acted on) are refused on the page whatever the chat asks, and a
+   * step that submits, sends or deletes waits for the person's yes. `false`
+   * for a page the box must not read at all. On the script tag:
+   * `data-page-agent="off"`.
+   */
+  pageAgent?: boolean;
+  /**
    * Who is looking at your page. Only needed for a link whose admin chose who
    * sees the button (signed-in visitors, certain addresses, certain traits);
    * a link open to everybody ignores it.

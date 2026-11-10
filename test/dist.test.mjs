@@ -35,6 +35,7 @@ import {
   visitorBody,
   watchesRoute,
 } from "../src/widget.js";
+import { isPlainPath } from "../src/page.js";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1070,10 +1071,13 @@ describe("the chat kept warm", () => {
     }
   });
 
-  it("parks with opacity and inert, never display or visibility", () => {
-    // display:none and an off-screen frame both stop Flutter drawing its
-    // first frame, which is the thing being built ahead.
-    assert.match(dist, /\.dock\.parked \{ opacity: 0; pointer-events: none \}/);
+  it("parks transparent, hidden and inert, never display", () => {
+    // display:none tears the frame's layout down. Hidden as well as
+    // transparent since 1.21.1 (AVO-829): WebKit on an iPhone sent the
+    // page's swipes to a parked frame that only took no pointer events.
+    assert.match(dist, /\.dock\.parked \{ opacity: 0; pointer-events: none; visibility: hidden \}/);
+    assert.match(dist, /\.dock\.parked iframe \{ visibility: hidden \}/);
+    assert.match(core, /scrim\.style\.visibility = on \? "hidden" : "";/);
     assert.match(core, /overlay\.inert = true;/);
     assert.equal(/\.parked[^}]*display:\s*none/.test(dist), false);
   });
@@ -1195,8 +1199,13 @@ describe("moving the box by the page's own header", () => {
 
 describe("a button under an answer, taking the page there", () => {
   it("takes only a plain path on this site", () => {
-    assert.match(core, /!\/\^\\\/\(\?!\\\/\)\[A-Za-z0-9\\-\._~\\\/%\]\*\$\/\.test\(path\)/);
-    assert.match(core, /path\.split\("\/"\)\.indexOf\("\.\."\) !== -1/);
+    // The rule lives in src/page.js now, shared with the box's own steps.
+    assert.match(core, /if \(!isPlainPath\(path\)\) return;/);
+    for (const ok of ["/", "/receipts", "/a/b-c_d.e~f/%20"]) assert.equal(isPlainPath(ok), true, ok);
+    for (const no of ["", "receipts", "//evil.test", "https://evil.test/", "javascript:alert(1)",
+      "/a/../b", "/a?token=x", "/#/x", "/" + "a".repeat(200), null]) {
+      assert.equal(isPlainPath(no), false, String(no));
+    }
     assert.match(core, /location\.assign\(path\)/);
     assert.equal(/location\.href\s*=/.test(core), false, "never an address of somebody else's choosing");
   });
@@ -1207,7 +1216,7 @@ describe("a button under an answer, taking the page there", () => {
   });
 
   it("opens the box again only within a minute of going", () => {
-    assert.match(core, /if \(at && Date\.now\(\) - at < 60000\) open\(\);/);
+    assert.match(core, /if \(note\.at && Date\.now\(\) - note\.at < 60000\) \{/);
   });
 });
 
@@ -1291,7 +1300,7 @@ describe("the app's own actions, run by the box", () => {
     assert.equal(JSON.stringify(told).includes("run"), false);
     // postMessage clones: a function in it would throw and lose the open.
     assert.deepEqual(structuredClone(told), told);
-    assert.match(core, /if \(actions\.length\) message\.actions = describeActions\(actions\);\n\s+postToFrame\(message\);/);
+    assert.match(core, /if \(actions\.length\) message\.actions = describeActions\(actions\);\n[\s\S]{0,400}?postToFrame\(message\);/);
   });
 
   it("hands run only the declared values, as strings", async () => {

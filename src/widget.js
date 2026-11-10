@@ -27,6 +27,7 @@
 
 import { launcherFont, matchTheme, systemTheme, themeOption, withSystem } from "./theme.js";
 import { copyPage } from "./copy.js";
+import { createPageHands, isPlainPath, squash } from "./page.js";
 
 /** Corners the launcher and the dock may sit in. */
 export const CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"];
@@ -141,6 +142,16 @@ export const DEFAULT_ORIGIN = "https://app-avokaido-eu.web.app";
  *        `run` returns (a promise of) `{ ok, message }`, or nothing for done.
  *        Replace the list as the screen changes with `setActions()`. Only the
  *        description is sent to the chat, never `run` — see `readActions`.
+ * @param {boolean} [options.pageAgent=true]
+ *        Whether the box may read this page and do steps on it for the person
+ *        who asks — point at something, click, type, pick, scroll, go to a
+ *        page here — the way they would themselves, in their own session.
+ *        Secret fields, other sites, and parts you mark
+ *        `data-avokaido-private` (never read) or `data-avokaido-no-act`
+ *        (never acted on) are refused on this page whatever the chat asks,
+ *        and anything that submits, sends or deletes waits for the person's
+ *        yes. Pass `false` for a page the box must not read at all — see
+ *        `src/page.js`.
  */
 /**
  * The longest context this will put in a URL.
@@ -1059,6 +1070,12 @@ export function createIdeaWidget(options) {
   var user = readUser(opts.user);
   /** What the app lets the box run, as `readActions` kept it. */
   var actions = readActions(opts.actions);
+  /** Whether the box may read this page and do steps on it (`src/page.js`). */
+  var pageAgent = opts.pageAgent !== false;
+  /** The page's reader and hands, made on the first read. */
+  var hands = null;
+  /** A step that sent this page somewhere: told to the chat on the next open. */
+  var resumedStep = null;
   /**
    * The link's answer to the GET, as it came — `{ show, paths, visitor, ask,
    * anyOf?, noneOf? }` — and the latest POST's verdict laid over it when the
@@ -1768,13 +1785,35 @@ export function createIdeaWidget(options) {
       ".dock { max-height: calc(100vh - 104px) }",
       ".dock.placed { max-width: calc(100vw - 16px); max-height: calc(100vh - 16px) }",
       ".dock iframe { flex: 1; width: 100%; border: 0; display: block }",
-      /* KEPT, NOT SHOWN: a frame built ahead of the click, or put away. The
-         same recipe as ducking for a screenshot — transparent and taking no
-         clicks, never display or visibility, which stop the frame painting:
-         Flutter then never draws its first frame, and an off-screen frame is
-         throttled by the browser. `inert` (set in script) keeps it out of the
-         tab order and the accessibility tree. */
-      ".dock.parked { opacity: 0; pointer-events: none }",
+      /* KEPT, NOT SHOWN: a frame built ahead of the click, or put away.
+         Transparent and taking no clicks — and, since 1.21.1, `visibility:
+         hidden` on the dock and its frame as well. On an iPhone (Safari and
+         Chrome, both WebKit) `pointer-events: none` is not enough: a parked
+         dock is `inset: 0` on a phone, and WebKit still sent the page's
+         swipes to its frame, so the page would not scroll until reloaded.
+         Hidden boxes leave hit-testing in every browser. Never display,
+         which tears the frame's layout down. The cost: a hidden frame may
+         be throttled, so a frame built ahead may draw its first frame on
+         open rather than before it. No transition on visibility, so an open
+         shows the box in the same frame the class comes off. `inert` (set
+         in script) keeps it out of the tab order and the accessibility
+         tree. */
+      ".dock.parked { opacity: 0; pointer-events: none; visibility: hidden }",
+      ".dock.parked iframe { visibility: hidden }",
+      /* THE BOX POINTING AT THE PAGE (`point`): a ring in the site's primary
+         around what it means, and a note beside it. Over the page, under the
+         dock, and taking no clicks — the person may press what it rings. */
+      ".agent-ring { position: fixed; z-index: 0; pointer-events: none;",
+      "  border: 2px solid var(--w-primary, #2C4112); border-radius: 8px;",
+      "  box-shadow: 0 0 0 4px rgba(255,255,255,.7), 0 0 0 9999px rgba(0,0,0,.06);",
+      "  transition: left .12s, top .12s, width .12s, height .12s }",
+      ".agent-note { position: fixed; z-index: 0; pointer-events: none; max-width: 280px;",
+      "  padding: 8px 12px; border-radius: 10px;",
+      "  font: 500 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;",
+      "  font-family: var(--w-font-launcher, system-ui, -apple-system, 'Segoe UI', sans-serif);",
+      "  color: var(--w-bg, #F5F3EC); background: var(--w-text, #231502);",
+      "  box-shadow: 0 2px 8px rgba(0,0,0,.18) }",
+      "@media (prefers-reduced-motion: reduce) { .agent-ring { transition: none } }",
       /* ROOM FOR THE CONSOLE, asked for by the page and granted here.
          A conversation wants a column; a list of runs beside a list of
          repositories does not fit in one. The page cannot do this itself —
@@ -2296,6 +2335,14 @@ export function createIdeaWidget(options) {
     // What the box may run here, as of this open — without `run`, which never
     // leaves this page. No key at all when the app registered none.
     if (actions.length) message.actions = describeActions(actions);
+    // Whether the box may read and act on this page; absent from an older
+    // script, which a chat takes as no.
+    message.pageAgent = pageAgent;
+    // Back after a step that took the page somewhere: the chat carries on.
+    if (resumedStep != null) {
+      message.resumed = { id: resumedStep };
+      resumedStep = null;
+    }
     postToFrame(message);
     if (user && typeof user.getIdToken === "function") {
       idTokenWithin(user.getIdToken, ID_TOKEN_WAIT_MS)
@@ -2331,6 +2378,7 @@ export function createIdeaWidget(options) {
   function close(reason) {
     if (!shown) return;
     shown = false;
+    unpoint();
     // Cancels any capture restore still pending, so a timer cannot fire against
     // a box that has since been reopened and put it back to transparent.
     duck(false);
@@ -2462,9 +2510,12 @@ export function createIdeaWidget(options) {
     // underneath it.
     overlay.style.pointerEvents = on ? "none" : "";
     // A preview's scrim goes with it, or the picture is of a dimmed page.
+    // Hidden too, not only transparent: nothing is painted in the scrim, and
+    // WebKit hit-tests a transparent full-screen box (see `.dock.parked`).
     if (scrim) {
       scrim.style.opacity = overlay.style.opacity;
       scrim.style.pointerEvents = overlay.style.pointerEvents;
+      scrim.style.visibility = on ? "hidden" : "";
     }
     if (on) {
       // NEVER STUCK INVISIBLE. If the framed page dies between the two
@@ -2558,6 +2609,7 @@ export function createIdeaWidget(options) {
         // Asked for in the middle of a screenshot, it starts out ducked too.
         scrim.style.opacity = overlay.style.opacity;
         scrim.style.pointerEvents = overlay.style.pointerEvents;
+        scrim.style.visibility = overlay.style.opacity === "0" ? "hidden" : "";
         root.appendChild(scrim);
       }
       return;
@@ -3186,13 +3238,7 @@ export function createIdeaWidget(options) {
   function navigateFor(data) {
     var path = data && typeof data.path === "string" ? data.path : "";
     var id = data && typeof data.id === "number" ? data.id : 0;
-    if (
-      path.length > 200 ||
-      !/^\/(?!\/)[A-Za-z0-9\-._~\/%]*$/.test(path) ||
-      path.split("/").indexOf("..") !== -1
-    ) {
-      return;
-    }
+    if (!isPlainPath(path)) return;
     postToFrame({ type: "avokaido:navigated", id: id });
     var routed = false;
     try {
@@ -3206,11 +3252,7 @@ export function createIdeaWidget(options) {
       /* No CustomEvent: the browser goes there, below. */
     }
     if (routed) return;
-    try {
-      localStorage.setItem(REOPEN_KEY, String(Date.now()));
-    } catch (e) {
-      /* Storage blocked: the box simply stays shut on the next page. */
-    }
+    leaveReopen(null);
     location.assign(path);
   }
 
@@ -3244,14 +3286,264 @@ export function createIdeaWidget(options) {
    * any reload.
    */
   function reopenAfterNavigate() {
-    var at = 0;
+    var note = readReopen();
     try {
-      at = Number(localStorage.getItem(REOPEN_KEY)) || 0;
       localStorage.removeItem(REOPEN_KEY);
     } catch (e) {
       return;
     }
-    if (at && Date.now() - at < 60000) open();
+    if (note.at && Date.now() - note.at < 60000) {
+      // A step that took the page here: the chat is told on the open, and
+      // carries on from the page it landed on.
+      if (note.step != null) resumedStep = note.step;
+      open();
+    }
+  }
+
+  /**
+   * The note left before the page goes somewhere: a time — and, since 1.23,
+   * the step that sent it, as `{ at, step }`. A plain number is a note from
+   * a button under an answer, or from an older script.
+   */
+  function readReopen() {
+    var raw = null;
+    try {
+      raw = localStorage.getItem(REOPEN_KEY);
+    } catch (e) {
+      return { at: 0, step: null };
+    }
+    if (!raw) return { at: 0, step: null };
+    if (/^\d+$/.test(raw)) return { at: Number(raw), step: null };
+    try {
+      var o = JSON.parse(raw);
+      var step = typeof o.step === "string" || typeof o.step === "number" ? o.step : null;
+      return { at: Number(o.at) || 0, step: step };
+    } catch (e) {
+      return { at: 0, step: null };
+    }
+  }
+
+  function leaveReopen(stepId) {
+    try {
+      localStorage.setItem(
+        REOPEN_KEY,
+        stepId == null ? String(Date.now()) : JSON.stringify({ at: Date.now(), step: stepId }),
+      );
+    } catch (e) {
+      /* Storage blocked: the box simply stays shut on the next page. */
+    }
+  }
+
+  /** Takes back a note this page left, when the page did not go anywhere. */
+  function takeBackReopen(stepId) {
+    if (readReopen().step === stepId) {
+      try {
+        localStorage.removeItem(REOPEN_KEY);
+      } catch (e) {
+        /* Nothing to take back. */
+      }
+    }
+  }
+
+  /**
+   * THE BOX READS THIS PAGE — `avokaido:read { id }` from the chat, answered
+   * with `avokaido:page { id, page }` or `{ id, error }` ("off", "failed").
+   * `page` is `{ text, path, title, refs }`: the outline `src/page.js`
+   * makes, which the chat sends with the question. Read now, never ahead, so
+   * it is the screen they are asking about.
+   */
+  function handsNow() {
+    if (!hands) {
+      hands = createPageHands({
+        document: document,
+        window: window,
+        host: host,
+        draw: point,
+        navigate: function (path, stepId) {
+          goTo(path, stepId);
+        },
+        act: function (actionId, args) {
+          return runAction(actions, actionId, args).then(function (result) {
+            emit("action", { actionId: actionId, args: result.args, ok: result.ok });
+            return result;
+          });
+        },
+        ask: function (detail) {
+          try {
+            return document.dispatchEvent(
+              new CustomEvent("avokaido:step", { detail: detail, cancelable: true }),
+            );
+          } catch (e) {
+            return true;
+          }
+        },
+      });
+    }
+    return hands;
+  }
+
+  function readFor(data) {
+    var id = data && (typeof data.id === "number" || typeof data.id === "string") ? data.id : 0;
+    if (!pageAgent) {
+      postToFrame({ type: "avokaido:page", id: id, error: "off" });
+      return;
+    }
+    try {
+      postToFrame({ type: "avokaido:page", id: id, page: handsNow().read() });
+    } catch (e) {
+      postToFrame({ type: "avokaido:page", id: id, error: "failed" });
+    }
+  }
+
+  /**
+   * ONE STEP ON THIS PAGE, for the person — `avokaido:step { id, tool, ref,
+   * args, allowed }` from the chat, answered with `avokaido:stepped { id, ok,
+   * message, label, confirm?, page? }`: how it went and the page as it is
+   * after it, so the chat's next step is about the screen as it now is.
+   *
+   * `confirm` is this page saying the step waits for the person's yes
+   * (`confirmFor` in `src/page.js`); the chat asks them and sends the step
+   * again with `allowed: true`. Refused and waiting steps do nothing at all.
+   *
+   * A STEP MAY TAKE THE PAGE AWAY — a link clicked, a form sent, a page
+   * gone to. The note `navigateFor` leaves is left before every click and
+   * every page, carrying the step's id, and taken back if the page stays: on
+   * the page it lands on the box opens again and the chat is told the step
+   * it was in the middle of (`resumed` on `avokaido:open`).
+   */
+  var STEP_SETTLE_MS = 450;
+
+  function stepFor(data) {
+    var id = data && (typeof data.id === "number" || typeof data.id === "string") ? data.id : 0;
+    var answer = function (result, withPage) {
+      if (destroyed) return;
+      var message = {
+        type: "avokaido:stepped",
+        id: id,
+        ok: result.ok,
+        message: result.message,
+        label: result.label || "",
+      };
+      if (result.confirm) message.confirm = result.confirm;
+      if (withPage) {
+        try {
+          message.page = handsNow().read();
+        } catch (e) {
+          /* The step's answer still goes; the chat reads again if it needs. */
+        }
+      }
+      postToFrame(message);
+    };
+    if (!pageAgent) {
+      answer({ ok: false, message: "off", label: "" }, false);
+      return;
+    }
+    var step = {
+      id: id,
+      tool: data && typeof data.tool === "string" ? data.tool : "",
+      ref: data && typeof data.ref === "string" ? data.ref : "",
+      args: data && data.args && typeof data.args === "object" ? data.args : {},
+      allowed: !!(data && data.allowed === true),
+    };
+    var leaves = step.tool === "click";
+    if (leaves) leaveReopen(id);
+    handsNow().run(step).then(function (result) {
+      // Long enough for the app to draw what the step changed — a menu open,
+      // a row added, the next screen of a router.
+      setTimeout(function () {
+        if (leaves) takeBackReopen(id);
+        answer(result, result.ok || !!result.confirm);
+      }, result.ok ? STEP_SETTLE_MS : 0);
+    });
+  }
+
+  /**
+   * A STEP THAT GOES TO A PAGE: the same way a button under an answer does
+   * (`navigateFor`) — the app's router first, then the browser — with the
+   * step's id on the note, so the chat carries on from where it lands.
+   */
+  function goTo(path, stepId) {
+    var routed = false;
+    try {
+      routed = !document.dispatchEvent(
+        new CustomEvent("avokaido:navigate", { detail: { path: path }, cancelable: true }),
+      );
+    } catch (e) {
+      /* No CustomEvent: the browser goes there, below. */
+    }
+    if (routed) return;
+    leaveReopen(stepId);
+    location.assign(path);
+  }
+
+  /**
+   * POINTING AT SOMETHING ON THE PAGE: a ring around it and, when the chat
+   * has a word to say about it, a note beside it. Drawn in this widget's own
+   * shadow root, over the page and taking no clicks, so the person can press
+   * the very thing it rings. It follows the element as the page scrolls, and
+   * goes on the next step, on `avokaido:unpoint`, and when the box closes.
+   * A ring with no note (a click, a typed field) fades by itself.
+   */
+  var ring = null;
+  var ringNote = null;
+  var ringTarget = null;
+  var ringFrame = 0;
+  var ringFade = null;
+
+  function point(el, note) {
+    unpoint();
+    if (!root || !el || typeof el.getBoundingClientRect !== "function") return;
+    ringTarget = el;
+    if (typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    }
+    ring = document.createElement("div");
+    ring.className = "agent-ring";
+    ring.setAttribute("aria-hidden", "true");
+    root.appendChild(ring);
+    if (note) {
+      ringNote = document.createElement("div");
+      ringNote.className = "agent-note";
+      ringNote.setAttribute("role", "status");
+      ringNote.textContent = squash(note, 160);
+      root.appendChild(ringNote);
+    } else {
+      ringFade = setTimeout(unpoint, 1600);
+    }
+    followRing();
+  }
+
+  function followRing() {
+    if (!ring || !ringTarget) return;
+    var r = ringTarget.getBoundingClientRect();
+    var pad = 4;
+    ring.style.left = r.left - pad + "px";
+    ring.style.top = r.top - pad + "px";
+    ring.style.width = r.width + pad * 2 + "px";
+    ring.style.height = r.height + pad * 2 + "px";
+    if (ringNote) {
+      var below = r.bottom + 10 + ringNote.offsetHeight < window.innerHeight;
+      var left = Math.max(8, Math.min(r.left, window.innerWidth - ringNote.offsetWidth - 8));
+      ringNote.style.left = left + "px";
+      ringNote.style.top = (below ? r.bottom + 10 : Math.max(8, r.top - 10 - ringNote.offsetHeight)) + "px";
+    }
+    if (ringTarget.isConnected === false) {
+      unpoint();
+      return;
+    }
+    ringFrame = window.requestAnimationFrame(followRing);
+  }
+
+  function unpoint() {
+    if (ringFrame) window.cancelAnimationFrame(ringFrame);
+    ringFrame = 0;
+    if (ringFade) clearTimeout(ringFade);
+    ringFade = null;
+    if (ring) ring.remove();
+    if (ringNote) ringNote.remove();
+    ring = null;
+    ringNote = null;
+    ringTarget = null;
   }
 
   /**
@@ -3313,6 +3605,12 @@ export function createIdeaWidget(options) {
       navigateFor(event.data);
     } else if (type === "avokaido:action") {
       actFor(event.data);
+    } else if (type === "avokaido:read") {
+      readFor(event.data);
+    } else if (type === "avokaido:step") {
+      stepFor(event.data);
+    } else if (type === "avokaido:unpoint") {
+      unpoint();
     } else if (type === "avokaido:close") {
       close("page");
     } else if (type === "avokaido:dismiss") {
@@ -3775,6 +4073,7 @@ export function createIdeaWidget(options) {
    */
   function destroy() {
     destroyed = true;
+    unpoint();
     waiting = [];
     close("api");
     discard();

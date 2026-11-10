@@ -444,6 +444,7 @@ Script tag attributes, and the equivalent options:
 | `data-context` | `context` | none | Where in your app the person is, so the interview need not ask. Re-read on every open — keep it current as they navigate. The option also takes an object or a function; see [Telling it where the person is](#telling-it-where-the-person-is). |
 | `data-route` | `route` | on | Send the page's path and hash, so a suggestion says which screen it is about. The query string is never sent either way. `data-route="off"` for an app whose paths name things that must not leave it; see [What it sends](#what-it-sends). |
 | `data-page-copy` | `pageCopy` | on | Let the chat take a copy of the page when somebody asks to see their suggestion on it before sending, for a before-and-after. Only on that answer. `data-page-copy="off"` for a page whose content must not leave it; see [What it sends](#what-it-sends). |
+| `data-page-agent` | `pageAgent` | on | Let the box read this page and do steps on it for the person who asks — point, click, type, pick, scroll, go to a page here. `data-page-agent="off"` for a page it must not read at all; see [Helping people on the page](#helping-people-on-the-page). |
 | — | `actions` | none | What the box may do in your app when somebody asks and confirms: your own functions, so code only — `widget.setActions()`, or `window.avokaido.actions` with the script tag. See [Letting the box run things in your app](#letting-the-box-run-things-in-your-app). |
 | `data-user-id` · `data-user-email` · `data-user-traits` | `user` | none | Who is looking, for a link limited to certain visitors; traits are JSON. Watched for changes. See [Choosing who sees it](#choosing-who-sees-it). |
 | `data-origin` | `origin` | the script's own origin | Where the interview lives. The script-tag build defaults to the origin it was served from, so an embed served from a preview channel frames the preview. **Set this explicitly if you serve the file from a third-party CDN** (jsDelivr, unpkg) or self-host it — otherwise the widget frames the CDN. |
@@ -664,6 +665,56 @@ There is no `data-actions` attribute: a function cannot live in one. After
 each ask, `avokaido:action` fires on `document` with `detail: { actionId,
 args, ok }` — `ok: false` when it failed or was refused.
 
+## Helping people on the page
+
+Ask the box "how do I connect my Google Drive?" or "why does this say *Not
+connected yet*?" and it answers about the screen the person is on: it reads
+the page, points at what they need, and — when they ask it to — clicks,
+types, picks and goes to pages for them, one step at a time, the way they
+would themselves.
+
+It reads an outline, not a picture: the headings, labels, buttons, links,
+text, and the values of ordinary fields, each control with a short ref the
+chat names in a step.
+
+```
+form "Add a destination"
+  [e4] combobox "Kind" = "Google Drive" options: "Google Drive", "Dropbox"
+  [e5] textbox "Name" required
+  [e8] button "Add destination"
+```
+
+**Your page is where every step is checked**, whatever the chat or the model
+behind it asked, and it is only ever the person's own hands: what they could
+click, in their own session, with your app's own checks deciding what that
+may do. On the page, this script refuses:
+
+- anything hidden, disabled, gone since the page was read, or part of the box;
+- a password, card number, one-time code or any field named like a secret —
+  its value is never read, and nothing is typed into it;
+- a link to another site, and any page to go to that is not a plain path here;
+- anything inside `data-avokaido-no-act`, and it never reads anything inside
+  `data-avokaido-private`:
+
+```html
+<section data-avokaido-private>…a patient's record…</section>
+<div data-avokaido-no-act>…the danger zone…</div>
+```
+
+And it **waits for the person's yes** before a click that submits a form or
+is named with a word there is no taking back — delete, remove, send, pay,
+sign, publish, … — and before any of [your app's actions](#letting-the-box-run-things-in-your-app).
+
+Before every step, a cancelable `avokaido:step` fires on `document` with
+`detail: { tool, label, path? }`; `preventDefault()` refuses it. Where the
+step goes to a page, `avokaido:navigate` fires first as for a button under an
+answer, so an app that routes itself keeps doing so, and after a full page
+load the box opens again and carries on.
+
+`pageAgent: false` (`data-page-agent="off"`) turns all of it off for a page:
+the box then answers from your app's guide and code only. See [What it
+sends](#what-it-sends) for what leaves the page.
+
 ## The faint badge in the corner
 
 The framed page draws a small badge beside its message box. It is not for the
@@ -817,6 +868,20 @@ your code instead:
         data-key="avk_YOUR_KEY" data-page-copy="off" defer></script>
 ```
 
+**An outline of the page, only when somebody asks the box something.** To
+answer a question about the screen, or to do a step on it, the widget reads
+the page as an outline: headings, labels, buttons, links, text, and the values
+of ordinary fields. Never a secret field's value (passwords, cards, one-time
+codes, anything named like one), nothing inside `data-avokaido-private`, and
+emails and phone numbers replaced before it leaves. It is sent with the
+question, used for the answer, and not kept. Switch it off for a page whose
+content must not leave it; see [Helping people on the page](#helping-people-on-the-page):
+
+```html
+<script src="https://app-avokaido-eu.web.app/widget/v1.js"
+        data-key="avk_YOUR_KEY" data-page-agent="off" defer></script>
+```
+
 `context` sits beside the route and is the opposite shape: nothing is read off
 your page, you write the sentence yourself, and it says more than a path can —
 "Calendar, week view, no sessions this week" against `/#/calendar`. See
@@ -911,13 +976,18 @@ From the chat to the widget:
 | `avokaido:wide` / `avokaido:narrow` | — | The centred preview panel over a scrim, and back. |
 | `avokaido:cover` / `avokaido:uncover` | — | The chat shows its own scrim: the widget's × and grip go under it. |
 | `avokaido:action` | `id`, `actionId`, `args` | The person pressed **Do it** on an action the app registered. `args` is `{ name: value }`. The widget calls that action's `run` with the declared params only, and answers `avokaido:acted`. |
+| `avokaido:read` | `id` | The box reads the page: answers `avokaido:page`. |
+| `avokaido:step` | `id`, `tool`, `ref?`, `args`, `allowed?` | One step on the page (`point`, `click`, `type`, `select`, `scroll`, `navigate`, `action`). Checked and done by `src/page.js`, then answered with `avokaido:stepped`. `allowed: true` is the person's yes to a step that waited for one. |
+| `avokaido:unpoint` | — | Takes away the ring and note a `point` step drew. |
 | `avokaido:navigate` | `id`, `path` | A button under an answer to a question about the app, pressed. Only a plain path on this site: answers `avokaido:navigated`, then emits a cancelable `avokaido:navigate` on the page, and goes there itself unless the page called `preventDefault()` — opening the box again on the page it lands on. |
 
 From the widget to the chat:
 
 | Message | Payload | When |
 |---|---|---|
-| `avokaido:open` | `route?`, `at?`, `openMs?`, `actions?` | Every open (and again once the chat has painted). `actions` is what the app registered, as `[{ id, name, about, params: [{ name, about, required }] }]` — never `run` — and absent when there are none. |
+| `avokaido:open` | `route?`, `at?`, `openMs?`, `actions?`, `pageAgent`, `resumed?` | Every open (and again once the chat has painted). `actions` is what the app registered, as `[{ id, name, about, params: [{ name, about, required }] }]` — never `run` — and absent when there are none. `pageAgent` is whether the box may read and act on this page (absent from an older widget: no). `resumed: { id }` is the step that sent the page here, once, on the page it landed on. |
+| `avokaido:page` | `id`, `page` or `error` | The answer to `avokaido:read`: `page` is `{ text, path, title, refs }`, `error` is `"off"` or `"failed"`. |
+| `avokaido:stepped` | `id`, `ok`, `message`, `label`, `confirm?`, `page?` | The answer to every `avokaido:step`. `confirm` says why it waits for the person's yes (nothing was done); `page` is the page read again after a step that was done, or that waits. `message` is `"off"` with `pageAgent: false`. |
 | `avokaido:closed` | — | Put away and kept. |
 | `avokaido:visitor` | `token` | On open, when the host app gave `getIdToken`. |
 | `avokaido:navigated` | `id` | Right after an `avokaido:navigate` it took: the chat then does not move the page itself. |
