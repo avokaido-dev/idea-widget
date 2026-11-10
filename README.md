@@ -711,6 +711,39 @@ step goes to a page, `avokaido:navigate` fires first as for a button under an
 answer, so an app that routes itself keeps doing so, and after a full page
 load the box opens again and carries on.
 
+**Seen to happen, out of the way.** While it works, the box shrinks to a strip
+and moves off whatever it is about to touch, a dot goes to each field or
+button before it is used, and a pill at the top of the page says "Avokaido is
+helping" with **Stop**. Several fields in a row are filled in one go.
+
+**Point and ask.** The person can press "Point at something" in the chat and
+click anything on the page — a cell, a status, a button — to ask about it.
+That click is the box's, never the page's: nothing in your app sees it. The
+box is told what they clicked, with its row (and the table's column names),
+card or form, under the same rules as a reading. Escape cancels.
+
+### Letting the box look things up
+
+"Why does this say *Not connected yet*?" is answered best from the record
+itself. Register read-only **facts**, as you would [actions](#letting-the-box-run-things-in-your-app) —
+the same shape and caps, with `get` instead of `run`:
+
+```js
+window.avokaido.facts.register({
+  id: "destination-state",
+  name: "Destination state",
+  about: "Where one delivery destination stands, and why.",
+  params: [{ name: "name", about: "The destination's name.", required: true }],
+  get: async ({ name }) => api.destinations.state(name), // your own call, your own checks
+});
+```
+
+The box looks one up when a question needs it, never asking first, because
+nothing changes. `get` gets only the declared values; what it returns goes to
+the chat as JSON, emails and phone numbers replaced, cut at 4,000 characters,
+and is used for the answer and not kept. Return only what the person may see
+— `get` runs in their session, so your own checks apply.
+
 `pageAgent: false` (`data-page-agent="off"`) turns all of it off for a page:
 the box then answers from your app's guide and code only. See [What it
 sends](#what-it-sends) for what leaves the page.
@@ -977,17 +1010,22 @@ From the chat to the widget:
 | `avokaido:cover` / `avokaido:uncover` | — | The chat shows its own scrim: the widget's × and grip go under it. |
 | `avokaido:action` | `id`, `actionId`, `args` | The person pressed **Do it** on an action the app registered. `args` is `{ name: value }`. The widget calls that action's `run` with the declared params only, and answers `avokaido:acted`. |
 | `avokaido:read` | `id` | The box reads the page: answers `avokaido:page`. |
-| `avokaido:step` | `id`, `tool`, `ref?`, `args`, `allowed?` | One step on the page (`point`, `click`, `type`, `select`, `scroll`, `navigate`, `action`). Checked and done by `src/page.js`, then answered with `avokaido:stepped`. `allowed: true` is the person's yes to a step that waited for one. |
+| `avokaido:step` | `id`, `stepId?`, `tool`, `ref?`, `args`, `allowed?` | One step on the page (`point`, `click`, `type`, `select`, `scroll`, `navigate`, `action`, `look_up`). Checked and done by `src/page.js`, then answered with `avokaido:stepped`. `allowed: true` is the person's yes to a step that waited for one. |
 | `avokaido:unpoint` | — | Takes away the ring and note a `point` step drew. |
+| `avokaido:tuck` | `on` | The box is working on the page: shrink to a strip, show the "helping · Stop" pill, and move off what each step touches; `on: false` puts the box back as it was. |
+| `avokaido:pick` | `id` | Point and ask: the next click on the page is taken, not passed on, and answered with `avokaido:picked`. |
+| `avokaido:unpick` | — | Stops picking, answered `picked { cancelled }`. |
 | `avokaido:navigate` | `id`, `path` | A button under an answer to a question about the app, pressed. Only a plain path on this site: answers `avokaido:navigated`, then emits a cancelable `avokaido:navigate` on the page, and goes there itself unless the page called `preventDefault()` — opening the box again on the page it lands on. |
 
 From the widget to the chat:
 
 | Message | Payload | When |
 |---|---|---|
-| `avokaido:open` | `route?`, `at?`, `openMs?`, `actions?`, `pageAgent`, `resumed?` | Every open (and again once the chat has painted). `actions` is what the app registered, as `[{ id, name, about, params: [{ name, about, required }] }]` — never `run` — and absent when there are none. `pageAgent` is whether the box may read and act on this page (absent from an older widget: no). `resumed: { id }` is the step that sent the page here, once, on the page it landed on. |
+| `avokaido:open` | `route?`, `at?`, `openMs?`, `actions?`, `pageAgent`, `resumed?` | Every open (and again once the chat has painted). `actions` is what the app registered, as `[{ id, name, about, params: [{ name, about, required }] }]` — never `run` — and absent when there are none. `pageAgent` is whether the box may read and act on this page (absent from an older widget: no). `facts` is what the app lets the box look up, in the same shape as `actions`. `resumed: { id }` is the step that sent the page here (its `stepId`, else its `id`), once, on the page it landed on. |
 | `avokaido:page` | `id`, `page` or `error` | The answer to `avokaido:read`: `page` is `{ text, path, title, refs }`, `error` is `"off"` or `"failed"`. |
-| `avokaido:stepped` | `id`, `ok`, `message`, `label`, `confirm?`, `page?` | The answer to every `avokaido:step`. `confirm` says why it waits for the person's yes (nothing was done); `page` is the page read again after a step that was done, or that waits. `message` is `"off"` with `pageAgent: false`. |
+| `avokaido:stop` | — | **Stop** pressed on the page's pill: the chat stops and untucks the box. |
+| `avokaido:picked` | `id`, `label` and `context`, or `cancelled` / `error` | What the person clicked: a label for the chip, and the outline of its row, card or form (up to 2,000 characters). `error` is `"private"` or `"off"`. |
+| `avokaido:stepped` | `id`, `ok`, `message`, `label`, `confirm?`, `page?`, `data?` | The answer to every `avokaido:step`. `confirm` says why it waits for the person's yes (nothing was done); `page` is the page read again after a step that was done, or that waits. `message` is `"off"` with `pageAgent: false`. |
 | `avokaido:closed` | — | Put away and kept. |
 | `avokaido:visitor` | `token` | On open, when the host app gave `getIdToken`. |
 | `avokaido:navigated` | `id` | Right after an `avokaido:navigate` it took: the chat then does not move the page itself. |

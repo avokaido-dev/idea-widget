@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.24.0
+
+**Faster, and seen to happen.**
+- A step waits for the page only as long as it needs: 450 ms after a click,
+  a page or an action, 60 ms after a field, a pick or a point, none after a
+  lookup (`settleFor` in `src/page.js`).
+- A control the app drew again since the page was read is found again by
+  its role and name, when exactly one matches, instead of failing.
+- `avokaido:tuck { on }`: while the box works, the dock shrinks to a strip,
+  moves off whatever a step touches, and a pill at the top of the page says
+  "Avokaido is helping" with **Stop** (`avokaido:stop` to the chat). A dot
+  goes to each field or button before it is used, then fades; none of it
+  moves for somebody who asked for less motion.
+
+**Point and ask.** `avokaido:pick { id }`: the next click on the page is
+the person showing the box what they mean. It is taken in the capture phase
+and never reaches the page; the dock steps aside; Escape, `avokaido:unpick`
+or a minute cancel. Answered `avokaido:picked { id, label, context }`: the
+element, its row (with the table's column names), card or form, under the
+same rules as a reading.
+
+**What the page is saying.** A reading lists `alert "…"` lines (role
+`alert`/`status`, `aria-live`) and a field's own error (`aria-invalid` with
+`aria-errormessage`/`aria-describedby`), and returns `alerts`, at most three,
+for the chat's suggested questions.
+
+**Facts the box can look up.** Read-only lookups the app registers, like
+actions with `get` instead of `run` (`facts`, `setFacts()`,
+`window.avokaido.facts`). The `look_up` step never waits for a yes; the
+answer goes back on `avokaido:stepped` as `data`: JSON, contacts replaced,
+cut at 4,000 characters. `avokaido:open` carries `facts`.
+
+Also carries the chat's `stepId` across a page load — missed from 1.23.0.
+
 ## 1.23.0
 
 **The box can help people on the page they are on.** It reads the page as a

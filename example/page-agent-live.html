@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Destinations — live widget bench</title>
+  <!--
+    THE REAL WIDGET, DRIVEN WITHOUT A CHAT. The chat's origin is this page's
+    own, so the frame (a 404 from the example server — nothing needs to be in
+    it) is same-origin and `bench.say(message)` can speak from inside it, as
+    the chat would: `bench.say({ type: "avokaido:tuck", on: true })`. What the
+    widget answers lands in `bench.heard`. The audience check is answered
+    here, by a stub of `fetch`, so the launcher shows.
+  -->
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; color: #0A1B0D; background: #FCFCFA }
+    nav { padding: 24px 16px; border-right: 1px solid #E4E4DE }
+    nav a { display: block; padding: 6px 10px; color: inherit; text-decoration: none; border-radius: 8px }
+    main { padding: 32px 40px }
+    form { border: 1px solid #E4E4DE; border-radius: 12px; padding: 20px; max-width: 520px; display: grid; gap: 12px }
+    label { display: grid; gap: 4px; font-weight: 500 }
+    input, select { font: inherit; padding: 8px 10px; border: 1px solid #CFCFC8; border-radius: 8px }
+    button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #2F6B3B; background: #2F6B3B; color: #fff; cursor: pointer }
+    table { margin-top: 24px; border-collapse: collapse; min-width: 520px }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #E4E4DE }
+    .err { color: #B23A3A; font-size: 13px }
+  </style>
+  <script>
+    // The audience check, answered here: shown to everybody.
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (url, init) => String(url).includes("/api/idea/")
+      ? Promise.resolve(new Response(JSON.stringify({ show: true }), { headers: { "content-type": "application/json" } }))
+      : realFetch(url, init);
+  </script>
+</head>
+<body>
+  <nav>
+    <a href="/agreements">Agreements</a>
+    <a href="/example/page-agent-live.html" aria-current="page">Destinations</a>
+  </nav>
+  <main>
+    <h1>Destinations</h1>
+    <p>Where completed agreements are delivered besides Sign itself.</p>
+    <div id="form-host"></div>
+    <table>
+      <tr><th>Name</th><th>Kind</th><th>Status</th></tr>
+      <tr><td>test</td><td>Google Drive</td><td>Not connected yet</td></tr>
+    </table>
+  </main>
+  <script type="module">
+    import { createIdeaWidget } from "../src/index.js";
+    let rendered = 0;
+    // Drawn by "the app", and drawn again by bench.redraw(): new elements,
+    // the same controls — what a single-page app does on every render.
+    function draw() {
+      rendered++;
+      document.getElementById("form-host").innerHTML = `
+        <form id="add" onsubmit="event.preventDefault()">
+          <h2>Add a destination</h2>
+          <label>Kind <select id="kind"><option>Google Drive</option><option>Dropbox</option></select></label>
+          <label>Name <input id="name" aria-invalid="true" aria-errormessage="name-err"></label>
+          <span id="name-err" class="err">Name is required</span>
+          <label>Folder rule <input id="rule" value="/Agreements/{year}/{counterparty}"></label>
+          <button>Add destination</button>
+        </form>`;
+    }
+    draw();
+    const widget = createIdeaWidget({
+      key: "avk_bench",
+      origin: location.origin,
+      preload: "off",
+      facts: [{
+        id: "destination-state",
+        name: "Destination state",
+        about: "Where one destination stands, and why.",
+        params: [{ name: "name", about: "The destination's name.", required: true }],
+        get: ({ name }) => ({ name, connected: false, reason: "Connecting the receiving account is not built yet; copies are queued." }),
+      }],
+    });
+    const frame = () => document.querySelector("[data-avokaido]").shadowRoot.querySelector("iframe");
+    const bench = {
+      widget,
+      heard: [],
+      redraw: draw,
+      rendered: () => rendered,
+      say(message) {
+        frame().contentWindow.eval("parent.postMessage(" + JSON.stringify(message) + ", '*')");
+      },
+      async open() {
+        widget.open();
+        for (let i = 0; i < 50 && !frame(); i++) await new Promise((r) => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 300));
+        frame().contentWindow.eval("window.addEventListener('message', (e) => parent.bench.heard.push(e.data))");
+        bench.say({ type: "avokaido:ready" });
+        await new Promise((r) => setTimeout(r, 100));
+      },
+      async ask(message, type) {
+        const before = bench.heard.length;
+        bench.say(message);
+        for (let i = 0; i < 100; i++) {
+          const got = bench.heard.slice(before).find((m) => m.type === type);
+          if (got) return got;
+          await new Promise((r) => setTimeout(r, 30));
+        }
+        return null;
+      },
+    };
+    window.bench = bench;
+  </script>
+</body>
+</html>

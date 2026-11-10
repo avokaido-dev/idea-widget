@@ -9,7 +9,7 @@
  * nothing.
  */
 
-import { createIdeaWidget, readActions } from "./widget.js";
+import { createIdeaWidget, readActions, readFacts } from "./widget.js";
 import { themeOption } from "./theme.js";
 
 /** What `data-route` (and `data-page-copy`) may say to switch it off. */
@@ -183,41 +183,11 @@ if (script) {
     // unregister }` that pushes `["set", list]`, `["register", action]` and
     // `["unregister", id]` — and it is replayed here, in order, before the
     // real methods take its place. A plain array left there is a `set`.
-    var registered = [];
-    var actionsApi = {
-      set: function (list) {
-        registered = Array.isArray(list) ? list.slice() : [];
-        widget.setActions(registered);
-      },
-      register: function (action) {
-        // Read alone first, so one that does not fit warns once, here, and is
-        // never kept to warn again on every later change.
-        if (!readActions([action]).length) return;
-        registered = registered.filter(function (a) {
-          return !a || a.id !== action.id;
-        });
-        registered.push(action);
-        widget.setActions(registered);
-      },
-      unregister: function (id) {
-        registered = registered.filter(function (a) {
-          return !a || a.id !== id;
-        });
-        widget.setActions(registered);
-      },
-    };
-    var early = window.avokaido.actions;
-    if (Array.isArray(early)) {
-      actionsApi.set(early);
-    } else if (early && Array.isArray(early.queue)) {
-      early.queue.forEach(function (call) {
-        var name = call && call[0];
-        if (name === "set" || name === "register" || name === "unregister") {
-          actionsApi[name](call[1]);
-        }
-      });
-    }
-    window.avokaido.actions = actionsApi;
+    //
+    // And WHAT IT MAY LOOK UP, the same way: `window.avokaido.facts`, with
+    // `get` where an action has `run` (see readFacts in widget.js).
+    window.avokaido.actions = registry(readActions, widget.setActions, window.avokaido.actions);
+    window.avokaido.facts = registry(readFacts, widget.setFacts, window.avokaido.facts);
 
     // THE SAME THING BY ATTRIBUTE, for the integrations that cannot call a
     // function — the Dart wrapper mounts through this tag and sets attributes
@@ -235,4 +205,47 @@ if (script) {
       });
     }
   }
+}
+
+/**
+ * `{ set, register, unregister }` over one list the app keeps in code —
+ * actions, or facts — handing the whole list to [apply] on every change.
+ * A queue left at [early] before this deferred script ran is replayed here,
+ * in order (`early.queue.forEach`); a plain array left there is a `set`.
+ */
+function registry(read, apply, early) {
+  var registered = [];
+  var api = {
+    set: function (list) {
+      registered = Array.isArray(list) ? list.slice() : [];
+      apply(registered);
+    },
+    register: function (item) {
+      // Read alone first, so one that does not fit warns once, here, and is
+      // never kept to warn again on every later change.
+      if (!read([item]).length) return;
+      registered = registered.filter(function (a) {
+        return !a || a.id !== item.id;
+      });
+      registered.push(item);
+      apply(registered);
+    },
+    unregister: function (id) {
+      registered = registered.filter(function (a) {
+        return !a || a.id !== id;
+      });
+      apply(registered);
+    },
+  };
+  if (Array.isArray(early)) {
+    api.set(early);
+  } else if (early && Array.isArray(early.queue)) {
+    early.queue.forEach(function (call) {
+      var name = call && call[0];
+      if (name === "set" || name === "register" || name === "unregister") {
+        api[name](call[1]);
+      }
+    });
+  }
+  return api;
 }

@@ -26,8 +26,8 @@
  */
 
 import { launcherFont, matchTheme, systemTheme, themeOption, withSystem } from "./theme.js";
-import { copyPage } from "./copy.js";
-import { createPageHands, isPlainPath, squash } from "./page.js";
+import { copyPage, scrubText } from "./copy.js";
+import { createPageHands, isPlainPath, settleFor, squash } from "./page.js";
 
 /** Corners the launcher and the dock may sit in. */
 export const CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"];
@@ -642,13 +642,14 @@ function textWithin(value, max) {
 }
 
 /** One action as the app gave it, read — or null when it does not fit. */
-function readAction(value) {
+function readAction(value, fnKey) {
+  var key = fnKey || "run";
   if (!value || typeof value !== "object") return null;
   var id = textWithin(value.id, MAX_ACTION_ID);
   var name = textWithin(value.name, MAX_ACTION_TITLE);
   var about = textWithin(value.about, MAX_ACTION_ABOUT);
   if (!id || !ACTION_NAME.test(id) || !name || !about) return null;
-  if (typeof value.run !== "function") return null;
+  if (typeof value[key] !== "function") return null;
   var raw = value.params == null ? [] : value.params;
   if (!Array.isArray(raw) || raw.length > MAX_ACTION_PARAMS) return null;
   var params = [];
@@ -663,7 +664,7 @@ function readAction(value) {
     }
     params.push({ name: pName, about: pAbout, required: p.required === true });
   }
-  var fn = value.run;
+  var fn = value[key];
   return {
     id: id,
     name: name,
@@ -689,6 +690,24 @@ function readAction(value) {
  * (`describeActions`).
  */
 export function readActions(list) {
+  return readCallables(list, "run", "action(s)", "Letting the box run things in your app");
+}
+
+/**
+ * WHAT THE BOX MAY LOOK UP IN THIS APP — read-only, and only what the app
+ * registered: `{ id, name, about, params, get }`, the same shape and caps as
+ * an action, with `get(args)` returning (a promise of) something JSON can
+ * write. "Why does this say Not connected yet?" is answered from the
+ * record's real state this way — fetched by the app's own code, with its own
+ * checks — rather than guessed from the words on screen. See `runFact`.
+ *
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE, like `readActions`.
+ */
+export function readFacts(list) {
+  return readCallables(list, "get", "fact(s)", "Letting the box look things up");
+}
+
+function readCallables(list, fnKey, what, readme) {
   if (list == null) return [];
   var out = [];
   var dropped = 0;
@@ -696,7 +715,7 @@ export function readActions(list) {
     dropped = 1;
   } else {
     for (var i = 0; i < list.length; i++) {
-      var action = readAction(list[i]);
+      var action = readAction(list[i], fnKey);
       var taken = false;
       for (var j = 0; action && j < out.length; j++) {
         if (out[j].id === action.id) taken = true;
@@ -707,8 +726,8 @@ export function readActions(list) {
   }
   if (dropped && typeof console !== "undefined" && console.warn) {
     console.warn(
-      "[avokaido] " + dropped + " action(s) did not fit and were left out — " +
-        "see \"Letting the box run things in your app\" in the README",
+      "[avokaido] " + dropped + " " + what + " did not fit and were left out — " +
+        "see \"" + readme + "\" in the README",
     );
   }
   return out;
@@ -746,7 +765,7 @@ export function describeActions(actions) {
  * `ok: false` with its message, so the chat can say it did not happen;
  * nothing at all (`undefined`) reads as done.
  */
-export function runAction(actions, actionId, rawArgs) {
+export function runAction(actions, actionId, rawArgs, keepValue) {
   var cut = function (s) {
     return String(s).slice(0, MAX_ACTED_MESSAGE);
   };
@@ -776,6 +795,11 @@ export function runAction(actions, actionId, rawArgs) {
   };
   try {
     return Promise.resolve(action.run(args)).then(function (result) {
+      if (keepValue) {
+        var got = settled(true, "");
+        got.value = result;
+        return got;
+      }
       if (result == null) return settled(true, "");
       if (typeof result !== "object") return settled(result !== false, "");
       return settled(
@@ -786,6 +810,33 @@ export function runAction(actions, actionId, rawArgs) {
   } catch (err) {
     return Promise.resolve(failed(err));
   }
+}
+
+/** The longest answer a fact may give, as JSON. */
+export var MAX_FACT_DATA = 4000;
+
+/**
+ * Looks up one of the app's facts for the chat, and settles to `{ ok,
+ * message, data }` — never a rejection. Only the declared values reach
+ * `get`, as for an action. `data` is what `get` returned, written as JSON,
+ * with emails and phone numbers replaced, and cut at [MAX_FACT_DATA]: it
+ * goes to the model with the question and is not kept.
+ *
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+export function runFact(facts, factId, rawArgs) {
+  return runAction(facts, factId, rawArgs, true).then(function (r) {
+    if (!r.ok) return { ok: false, message: r.message === "No such action" ? "No such fact" : r.message, data: null };
+    var text;
+    try {
+      text = JSON.stringify(r.value === undefined ? null : r.value);
+    } catch (e) {
+      return { ok: false, message: "It could not be written down", data: null };
+    }
+    text = scrubText(text);
+    if (text.length > MAX_FACT_DATA) text = text.slice(0, MAX_FACT_DATA - 6) + " …cut";
+    return { ok: true, message: "", data: text };
+  });
 }
 
 export function createIdeaWidget(options) {
@@ -1070,6 +1121,8 @@ export function createIdeaWidget(options) {
   var user = readUser(opts.user);
   /** What the app lets the box run, as `readActions` kept it. */
   var actions = readActions(opts.actions);
+  /** What the app lets the box look up, as `readFacts` kept it. */
+  var facts = readFacts(opts.facts);
   /** Whether the box may read this page and do steps on it (`src/page.js`). */
   var pageAgent = opts.pageAgent !== false;
   /** The page's reader and hands, made on the first read. */
@@ -1814,6 +1867,35 @@ export function createIdeaWidget(options) {
       "  color: var(--w-bg, #F5F3EC); background: var(--w-text, #231502);",
       "  box-shadow: 0 2px 8px rgba(0,0,0,.18) }",
       "@media (prefers-reduced-motion: reduce) { .agent-ring { transition: none } }",
+      /* Picking: the ring follows the pointer, so it does not glide. */
+      ".agent-ring.picking { transition: none; border-style: dashed }",
+      /* THE BOX'S CURSOR (`glide`): a dot in the site's primary that moves
+         to what a step touches. */
+      ".agent-cursor { position: fixed; left: -9px; top: -9px; z-index: 1; pointer-events: none;",
+      "  width: 18px; height: 18px; border-radius: 50%;",
+      "  background: var(--w-primary, #2C4112); border: 2px solid #fff;",
+      "  box-shadow: 0 1px 4px rgba(0,0,0,.3);",
+      "  transition: transform .25s cubic-bezier(.2,.8,.2,1) }",
+      "@media (prefers-reduced-motion: reduce) { .agent-cursor { transition: none } }",
+      /* "AVOKAIDO IS HELPING · STOP" — the one thing on the page the person
+         can press while the box works; the hint while picking takes its
+         place and none. */
+      ".agent-pill { position: fixed; z-index: 4; left: 50%; top: 16px; transform: translateX(-50%);",
+      "  display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 14px;",
+      "  border-radius: 999px; font: 500 13px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif;",
+      "  font-family: var(--w-font-launcher, system-ui, -apple-system, 'Segoe UI', sans-serif);",
+      "  color: var(--w-bg, #F5F3EC); background: var(--w-text, #231502);",
+      "  box-shadow: 0 2px 8px rgba(0,0,0,.18) }",
+      ".agent-pill button { font: inherit; padding: 5px 12px; border: 0; border-radius: 999px; cursor: pointer;",
+      "  color: var(--w-on-primary, #F5F3EC); background: var(--w-primary, #2C4112) }",
+      ".agent-pill.hint { padding: 8px 14px; pointer-events: none }",
+      /* TUCKED (`tuck`): a strip that says what the box is doing, while the
+         page is what is watched. Height only: the chat draws its compact
+         view in what is left. */
+      ".dock.tucked { height: 176px !important; max-height: 176px !important }",
+      /* Picking (`startPick`): the box steps aside for the pointer. Never
+         display or visibility — the frame keeps its focus for Escape. */
+      ".dock.away { opacity: 0; pointer-events: none }",
       /* ROOM FOR THE CONSOLE, asked for by the page and granted here.
          A conversation wants a column; a list of runs beside a list of
          repositories does not fit in one. The page cannot do this itself —
@@ -1951,6 +2033,9 @@ export function createIdeaWidget(options) {
       "          border-radius: 0; border: 0; box-shadow: none }",
       "  .grip, .sizer { display: none }",
       "  .scrim { display: none }",
+      /* On a phone the box is the whole screen: tucked, it is a strip at
+         the bottom, over the page rather than instead of it. */
+      "  .dock.tucked, .dock.placed.tucked { top: auto !important; height: 176px !important }",
       "}",
       "@media (prefers-reduced-motion: no-preference) {",
       /* The glide into a corner, and the lift when it is picked up. Only
@@ -2335,6 +2420,8 @@ export function createIdeaWidget(options) {
     // What the box may run here, as of this open — without `run`, which never
     // leaves this page. No key at all when the app registered none.
     if (actions.length) message.actions = describeActions(actions);
+    // What it may look up here, as of this open — never `get`.
+    if (facts.length) message.facts = describeActions(facts);
     // Whether the box may read and act on this page; absent from an older
     // script, which a chat takes as no.
     message.pageAgent = pageAgent;
@@ -2379,6 +2466,8 @@ export function createIdeaWidget(options) {
     if (!shown) return;
     shown = false;
     unpoint();
+    endPick({ cancelled: true });
+    tuck(false);
     // Cancels any capture restore still pending, so a timer cannot fire against
     // a box that has since been reopened and put it back to transparent.
     duck(false);
@@ -3362,6 +3451,9 @@ export function createIdeaWidget(options) {
         navigate: function (path, stepId) {
           goTo(path, stepId);
         },
+        lookUp: function (factId, args) {
+          return runFact(facts, factId, args);
+        },
         act: function (actionId, args) {
           return runAction(actions, actionId, args).then(function (result) {
             emit("action", { actionId: actionId, args: result.args, ok: result.ok });
@@ -3396,8 +3488,8 @@ export function createIdeaWidget(options) {
   }
 
   /**
-   * ONE STEP ON THIS PAGE, for the person — `avokaido:step { id, tool, ref,
-   * args, allowed }` from the chat, answered with `avokaido:stepped { id, ok,
+   * ONE STEP ON THIS PAGE, for the person — `avokaido:step { id, stepId?,
+   * tool, ref, args, allowed }` from the chat, answered with `avokaido:stepped { id, ok,
    * message, label, confirm?, page? }`: how it went and the page as it is
    * after it, so the chat's next step is about the screen as it now is.
    *
@@ -3411,8 +3503,6 @@ export function createIdeaWidget(options) {
    * the page it lands on the box opens again and the chat is told the step
    * it was in the middle of (`resumed` on `avokaido:open`).
    */
-  var STEP_SETTLE_MS = 450;
-
   function stepFor(data) {
     var id = data && (typeof data.id === "number" || typeof data.id === "string") ? data.id : 0;
     var answer = function (result, withPage) {
@@ -3425,6 +3515,7 @@ export function createIdeaWidget(options) {
         label: result.label || "",
       };
       if (result.confirm) message.confirm = result.confirm;
+      if (result.data != null) message.data = result.data;
       if (withPage) {
         try {
           message.page = handsNow().read();
@@ -3438,22 +3529,32 @@ export function createIdeaWidget(options) {
       answer({ ok: false, message: "off", label: "" }, false);
       return;
     }
+    // The chat's own name for the step, kept on the note a page load
+    // leaves behind, so the chat knows which one it was in the middle of.
+    var stepId = data && typeof data.stepId === "string" && data.stepId.length <= 80 ? data.stepId : id;
     var step = {
-      id: id,
+      id: stepId,
       tool: data && typeof data.tool === "string" ? data.tool : "",
       ref: data && typeof data.ref === "string" ? data.ref : "",
       args: data && data.args && typeof data.args === "object" ? data.args : {},
       allowed: !!(data && data.allowed === true),
     };
     var leaves = step.tool === "click";
-    if (leaves) leaveReopen(id);
-    handsNow().run(step).then(function (result) {
+    // Seen to happen: the box gets out of the way of what it is about to
+    // touch, and the cursor goes there first.
+    var target = step.ref ? handsNow().element(step.ref) : null;
+    if (target) dodge(target);
+    var shows = target && (step.tool === "click" || step.tool === "type" || step.tool === "select");
+    (shows ? glide(target) : Promise.resolve()).then(function () {
+      if (leaves) leaveReopen(stepId);
+      return handsNow().run(step);
+    }).then(function (result) {
       // Long enough for the app to draw what the step changed — a menu open,
       // a row added, the next screen of a router.
       setTimeout(function () {
-        if (leaves) takeBackReopen(id);
+        if (leaves) takeBackReopen(stepId);
         answer(result, result.ok || !!result.confirm);
-      }, result.ok ? STEP_SETTLE_MS : 0);
+      }, result.ok ? settleFor(step.tool) : 0);
     });
   }
 
@@ -3534,6 +3635,237 @@ export function createIdeaWidget(options) {
     ringFrame = window.requestAnimationFrame(followRing);
   }
 
+  function reducedMotion() {
+    try {
+      return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * THE BOX'S CURSOR: a dot that goes to what a click or a field is about to
+   * touch, so the person sees where — a quarter of a second, or at once for
+   * somebody who asked for less motion. Over the page, taking no clicks.
+   */
+  var cursor = null;
+  var cursorFade = null;
+
+  function glide(el) {
+    if (!root || !el || typeof el.getBoundingClientRect !== "function") return Promise.resolve();
+    var r = el.getBoundingClientRect();
+    var x = Math.round(r.left + Math.min(r.width / 2, 28));
+    var y = Math.round(r.top + r.height / 2);
+    if (!cursor) {
+      cursor = document.createElement("div");
+      cursor.className = "agent-cursor";
+      cursor.setAttribute("aria-hidden", "true");
+      var from = overlay ? overlay.getBoundingClientRect() : { left: window.innerWidth / 2, top: window.innerHeight / 2 };
+      cursor.style.transform = "translate(" + Math.round(from.left) + "px," + Math.round(from.top + 40) + "px)";
+      root.appendChild(cursor);
+      void cursor.offsetWidth;
+    }
+    cursor.style.transform = "translate(" + x + "px," + y + "px)";
+    // Gone soon after it lands: it is drawn where the element WAS, and the
+    // next step may scroll the page under it.
+    if (cursorFade) clearTimeout(cursorFade);
+    cursorFade = setTimeout(hideCursor, 1200);
+    var still = reducedMotion();
+    return new Promise(function (done) {
+      setTimeout(done, still ? 0 : 260);
+    });
+  }
+
+  function hideCursor() {
+    if (cursorFade) clearTimeout(cursorFade);
+    cursorFade = null;
+    if (cursor) cursor.remove();
+    cursor = null;
+  }
+
+  /**
+   * TUCKED WHILE IT WORKS (`avokaido:tuck { on }` from the chat): the dock
+   * shrinks to a strip that says what is happening, and a pill on the page
+   * says the box is helping, with Stop. The person watches the page, not the
+   * box. The dock moves out from over whatever a step touches (`dodge`), and
+   * goes back to where and how big it was when the chat untucks it.
+   */
+  var pill = null;
+  var tuckedFrom = null;
+
+  function tuck(on) {
+    if (on) {
+      if (overlay && !overlay.classList.contains("tucked")) {
+        tuckedFrom = {
+          left: overlay.style.left,
+          top: overlay.style.top,
+          right: overlay.style.right,
+          bottom: overlay.style.bottom,
+          placed: overlay.classList.contains("placed"),
+        };
+        overlay.classList.add("tucked");
+      }
+      showPill();
+      return;
+    }
+    if (overlay && overlay.classList.contains("tucked")) {
+      overlay.classList.remove("tucked");
+      if (tuckedFrom) {
+        overlay.style.left = tuckedFrom.left;
+        overlay.style.top = tuckedFrom.top;
+        overlay.style.right = tuckedFrom.right;
+        overlay.style.bottom = tuckedFrom.bottom;
+        overlay.classList.toggle("placed", tuckedFrom.placed);
+      }
+    }
+    tuckedFrom = null;
+    if (pill) pill.remove();
+    pill = null;
+    hideCursor();
+  }
+
+  function showPill() {
+    if (pill || !root) return;
+    pill = document.createElement("div");
+    pill.className = "agent-pill";
+    pill.setAttribute("role", "status");
+    var words = document.createElement("span");
+    words.textContent = "Avokaido is helping";
+    var stop = document.createElement("button");
+    stop.type = "button";
+    stop.textContent = "Stop";
+    stop.addEventListener("click", function () {
+      // The chat stops, and untucks the box; this half stops showing now.
+      postToFrame({ type: "avokaido:stop" });
+      unpoint();
+      hideCursor();
+    });
+    pill.appendChild(words);
+    pill.appendChild(stop);
+    root.appendChild(pill);
+  }
+
+  /** Out from over [el], when the tucked dock covers it: to the far side. */
+  function dodge(el) {
+    if (!overlay || !overlay.classList.contains("tucked") || typeof el.getBoundingClientRect !== "function") return;
+    var d = overlay.getBoundingClientRect();
+    var t = el.getBoundingClientRect();
+    var over = t.right > d.left && t.left < d.right && t.bottom > d.top && t.top < d.bottom;
+    if (!over) return;
+    var top = t.top + t.height / 2 > window.innerHeight / 2 ? 16 : window.innerHeight - d.height - 16;
+    var left = t.left + t.width / 2 > window.innerWidth / 2 ? 16 : window.innerWidth - d.width - 16;
+    placeAt(overlay, left, top);
+  }
+
+  /**
+   * POINT AND ASK (`avokaido:pick { id }` from the chat): the next click on
+   * the page is the person showing the box what they mean, not a click on
+   * the page. What is under the pointer is outlined; a click is taken before
+   * the page sees it (capture phase, every pointer and mouse event of it);
+   * Escape, `avokaido:unpick` or a minute without a click cancel. Answered
+   * with `avokaido:picked { id, label, context }` — see `pickContext` in
+   * `src/page.js` — or `{ id, cancelled }`, `{ id, error: "private" | "off" }`.
+   */
+  var picking = null;
+
+  function startPick(id) {
+    endPick({ cancelled: true });
+    if (!pageAgent || !root) {
+      postToFrame({ type: "avokaido:picked", id: id, error: "off" });
+      return;
+    }
+    var hands = handsNow();
+    var pickRing = document.createElement("div");
+    pickRing.className = "agent-ring picking";
+    pickRing.setAttribute("aria-hidden", "true");
+    pickRing.style.display = "none";
+    var hint = document.createElement("div");
+    hint.className = "agent-pill hint";
+    hint.setAttribute("role", "status");
+    hint.textContent = "Click what you want to ask about · Esc to cancel";
+    root.appendChild(pickRing);
+    root.appendChild(hint);
+    // Out of the way of what they mean to point at: the box would sit over
+    // it otherwise. The hint says how to come back without picking.
+    if (overlay) overlay.classList.add("away");
+    var ours = function (el) {
+      return !el || el === host || (host && host.contains(el));
+    };
+    var under = function (e) {
+      var el = document.elementFromPoint(e.clientX, e.clientY);
+      return ours(el) ? null : el;
+    };
+    var move = function (e) {
+      var el = under(e);
+      if (!el) {
+        pickRing.style.display = "none";
+        return;
+      }
+      var r = el.getBoundingClientRect();
+      pickRing.style.display = "";
+      pickRing.style.left = r.left - 3 + "px";
+      pickRing.style.top = r.top - 3 + "px";
+      pickRing.style.width = r.width + 6 + "px";
+      pickRing.style.height = r.height + 6 + "px";
+    };
+    var swallow = function (e) {
+      if (ours(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    var take = function (e) {
+      if (ours(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var el = under(e) || e.target;
+      var got = hands.pick(el);
+      endPick(got ? { label: got.label, context: got.context } : { error: "private" });
+    };
+    var key = function (e) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      endPick({ cancelled: true });
+    };
+    var on = [
+      [document, "pointermove", move],
+      [document, "pointerdown", swallow],
+      [document, "mousedown", swallow],
+      [document, "pointerup", swallow],
+      [document, "mouseup", swallow],
+      [document, "click", take],
+      [window, "keydown", key],
+    ];
+    on.forEach(function (l) {
+      l[0].addEventListener(l[1], l[2], true);
+    });
+    picking = {
+      id: id,
+      off: function () {
+        on.forEach(function (l) {
+          l[0].removeEventListener(l[1], l[2], true);
+        });
+        pickRing.remove();
+        hint.remove();
+        if (overlay) overlay.classList.remove("away");
+      },
+      timer: setTimeout(function () {
+        endPick({ cancelled: true });
+      }, 60000),
+    };
+  }
+
+  function endPick(result) {
+    if (!picking) return;
+    var p = picking;
+    picking = null;
+    clearTimeout(p.timer);
+    p.off();
+    var message = { type: "avokaido:picked", id: p.id };
+    for (var k in result) message[k] = result[k];
+    postToFrame(message);
+  }
+
   function unpoint() {
     if (ringFrame) window.cancelAnimationFrame(ringFrame);
     ringFrame = 0;
@@ -3611,6 +3943,12 @@ export function createIdeaWidget(options) {
       stepFor(event.data);
     } else if (type === "avokaido:unpoint") {
       unpoint();
+    } else if (type === "avokaido:tuck") {
+      tuck(event.data.on === true);
+    } else if (type === "avokaido:pick") {
+      startPick(event.data.id);
+    } else if (type === "avokaido:unpick") {
+      endPick({ cancelled: true });
     } else if (type === "avokaido:close") {
       close("page");
     } else if (type === "avokaido:dismiss") {
@@ -4074,6 +4412,8 @@ export function createIdeaWidget(options) {
   function destroy() {
     destroyed = true;
     unpoint();
+    endPick({ cancelled: true });
+    tuck(false);
     waiting = [];
     close("api");
     discard();
@@ -4126,6 +4466,14 @@ export function createIdeaWidget(options) {
      */
     setActions: function (list) {
       actions = readActions(list);
+    },
+    /**
+     * Replaces what the box may look up in this app — read-only lookups,
+     * `{ id, name, about, params, get }`. The chat is told the list on its
+     * next open. See `readFacts`.
+     */
+    setFacts: function (list) {
+      facts = readFacts(list);
     },
   };
 }

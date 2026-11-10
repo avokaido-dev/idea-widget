@@ -57,7 +57,25 @@ export var TYPE_MAX = 2000;
 export var NOTE_MAX = 160;
 
 /** Every step the chat may ask for. */
-export var STEP_TOOLS = ["point", "click", "type", "select", "scroll", "navigate", "action"];
+export var STEP_TOOLS = ["point", "click", "type", "select", "scroll", "navigate", "action", "look_up"];
+
+/**
+ * HOW LONG A STEP WAITS BEFORE THE PAGE IS READ AGAIN. A click may open a
+ * menu, add a row or route to the next screen, and the app needs a moment to
+ * draw it; a typed field or a picked option is there at once, and a box
+ * filling a form should not pause half a second between every field.
+ */
+export function settleFor(tool) {
+  if (tool === "click" || tool === "navigate" || tool === "action") return 450;
+  if (tool === "look_up") return 0;
+  return 60;
+}
+
+/** The longest description of a picked part of the page. */
+export var PICK_MAX_CHARS = 2000;
+/** The most alerts a reading lists for the chat's suggestions. */
+var ALERTS_MAX = 3;
+var ALERT_ROLES = { alert: 1, status: 1, alertdialog: 0 };
 
 var SKIP_TAGS = {
   SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, META: 1, LINK: 1, HEAD: 1,
@@ -388,8 +406,17 @@ function statesOf(el, role) {
 export function outlinePage(start, env) {
   var lines = [];
   var refs = new Map();
+  /** Each ref's role and name, to find it again after the app redraws. */
+  var prints = new Map();
+  /** What the page is saying — errors, notices — for the chat's suggestions. */
+  var alerts = [];
   var next = 1;
   var textRun = null;
+
+  function addAlert(text) {
+    var a = squash(scrub(text), TEXT_MAX);
+    if (a && alerts.length < ALERTS_MAX && alerts.indexOf(a) === -1) alerts.push(a);
+  }
 
   function flush() {
     if (textRun && squash(textRun.text)) {
@@ -412,14 +439,20 @@ export function outlinePage(start, env) {
   function control(el, role, depth) {
     var ref = "e" + next++;
     refs.set(ref, el);
-    var line = "[" + ref + "] " + role;
     var name = nameOf(el, env);
+    prints.set(ref, { role: role, name: name });
+    var line = "[" + ref + "] " + role;
     if (name) line += " " + quoted(name, NAME_MAX);
     if (role === "link") line += whereTo(el, env);
     var value = valueOf(el);
     if (value != null && squash(value)) line += " = " + quoted(value, VALUE_MAX);
     var states = statesOf(el, role);
     if (states.length) line += " " + states.join(", ");
+    var said = errorOf(el, env);
+    if (said) {
+      line += " error " + quoted(said, TEXT_MAX);
+      addAlert(said);
+    }
     if (tagOf(el) === "SELECT") {
       var opts = el.options || [];
       var names = [];
@@ -471,6 +504,15 @@ export function outlinePage(start, env) {
         // A listbox-like control still lists its options below.
         continue;
       }
+      var live = attr(k, "aria-live");
+      if ((role && ALERT_ROLES[role]) || live === "assertive" || live === "polite") {
+        var said2 = squash(textOf(k, env));
+        if (said2) {
+          push(depth, "alert " + quoted(said2, TEXT_MAX), k);
+          addAlert(said2);
+        }
+        continue;
+      }
       if (role === "heading") {
         var level = attr(k, "aria-level") || (/^H([1-6])$/.exec(tag) || [])[1] || "";
         push(depth, "heading" + (level ? " " + level : "") + " " + quoted(textOf(k, env), NAME_MAX), k);
@@ -517,7 +559,97 @@ export function outlinePage(start, env) {
   walk(start, 0);
   if (start.shadowRoot) walk(start.shadowRoot, 0);
   flush();
-  return { text: fit(lines), refs: refs };
+  return { text: fit(lines), refs: refs, prints: prints, alerts: alerts };
+}
+
+/** What the page says is wrong with a field: its `aria-errormessage` or
+ *  `aria-describedby` text, when the field is marked invalid. */
+function errorOf(el, env) {
+  if (attr(el, "aria-invalid") !== "true" || !env || !env.byId) return "";
+  var ids = (attr(el, "aria-errormessage") || attr(el, "aria-describedby") || "").split(/\s+/);
+  var out = [];
+  for (var i = 0; i < ids.length; i++) {
+    var t = ids[i] ? env.byId(ids[i]) : null;
+    if (t && !env.isHidden(t)) out.push(textOf(t, env));
+  }
+  return squash(out.join(" "));
+}
+
+/** The part of the page a picked element belongs to: its row, item, card,
+ *  form or dialog — the thing somebody means when they point at a cell. */
+function containerOf(el) {
+  return closest(el, function (n) {
+    var r = roleOf(n);
+    var t = tagOf(n);
+    return r === "row" || r === "listitem" || r === "form" || r === "dialog" ||
+      r === "region" || t === "LI" || t === "ARTICLE" || t === "FORM" || t === "DIALOG";
+  });
+}
+
+/**
+ * WHAT SOMEBODY POINTED AT, for the question they ask about it: a label for
+ * the chip in the chat, and the outline of the element's row, card or form
+ * (the context a question about one cell needs). The same rules as a
+ * reading — nothing private, no secret's value, contacts replaced — and
+ * null for a part of the page the app keeps private.
+ */
+export function pickContext(el, env) {
+  if (!el || isPrivate(el) || (env.skip && closest(el, env.skip))) return null;
+  var box = containerOf(el) || parentOf(el) || el;
+  var role = roleOf(el) || tagOf(el).toLowerCase();
+  var name = nameOf(el, env) || squash(textOf(el, env));
+  var row = roleOf(box) === "row" ? rowText(box, env) : "";
+  // A cell means little without its column: the table's first row, said once.
+  var columns = "";
+  if (row) {
+    var table = closest(parentOf(box), function (n) {
+      var r = roleOf(n);
+      return r === "table" || r === "grid";
+    });
+    var first = table ? firstRow(table) : null;
+    if (first && first !== box) columns = rowText(first, env);
+  }
+  var label = squash(scrub(row || (role + (name ? " " + name : ""))), 120);
+  var inner = outlinePage(box, env).text;
+  var context = "picked: " + role + (name ? " " + quoted(name, NAME_MAX) : "") +
+    "\nin: " + (roleOf(box) || tagOf(box).toLowerCase()) +
+    (row ? " " + row : "") +
+    (columns ? "\ncolumns: " + columns : "") + "\n" + inner;
+  if (context.length > PICK_MAX_CHARS) context = context.slice(0, PICK_MAX_CHARS - 1) + "…";
+  return { label: label, context: context };
+}
+
+/** The first row of a table, its header when it has one. */
+function firstRow(table) {
+  var stack = [].slice.call(table.childNodes || []);
+  var seen = 0;
+  while (stack.length && seen < 40) {
+    var n = stack.shift();
+    seen++;
+    if (n.nodeType !== 1) continue;
+    if (roleOf(n) === "row") return n;
+    stack = [].slice.call(n.childNodes || []).concat(stack);
+  }
+  return null;
+}
+
+/**
+ * THE SAME CONTROL, AFTER THE APP REDREW IT. A ref is for one reading; an
+ * app that renders again replaces the element it named. Found again by role
+ * and name in a fresh reading — only when exactly one control matches, so
+ * a step never lands on a look-alike.
+ */
+export function refind(print, fresh) {
+  if (!print) return null;
+  var found = null;
+  var count = 0;
+  fresh.prints.forEach(function (p, ref) {
+    if (p.role === print.role && p.name === print.name) {
+      count++;
+      found = ref;
+    }
+  });
+  return count === 1 ? found : null;
 }
 
 var INLINE = { SPAN: 1, B: 1, STRONG: 1, I: 1, EM: 1, SMALL: 1, CODE: 1, MARK: 1, ABBR: 1, TIME: 1, SUP: 1, SUB: 1, U: 1, S: 1, BR: 1, LABEL: 1, Q: 1, CITE: 1, KBD: 1, DATA: 1 };
@@ -616,7 +748,7 @@ export function confirmFor(tool, el, env) {
  */
 export function refusalFor(tool, el, env) {
   if (STEP_TOOLS.indexOf(tool) === -1) return "The box cannot do that kind of step.";
-  if (tool === "navigate" || tool === "action") return null;
+  if (tool === "navigate" || tool === "action" || tool === "look_up") return null;
   if (!el) return "That part of the page is not there any more. Read the page again.";
   if (el.isConnected === false) return "That part of the page is not there any more. Read the page again.";
   if (env.skip && closest(el, env.skip)) return "That is part of the box itself.";
@@ -738,10 +870,13 @@ export function createPageHands(cfg) {
   };
 
   /** Reads the page now: `{ text, url, title, size }` for the chat. */
+  var prints = new Map();
+
   function read() {
     var body = doc.body || doc.documentElement;
     var out = outlinePage(body, env);
     refs = out.refs;
+    prints = out.prints;
     var dialog = doc.querySelector && doc.querySelector("dialog[open], [role=dialog][aria-modal=true]");
     var header = [
       "page " + quoted(doc.title || "", NAME_MAX) + " at " + squash(win.location.pathname + win.location.hash, 160),
@@ -755,6 +890,7 @@ export function createPageHands(cfg) {
       path: squash(win.location.pathname + win.location.hash, 200),
       title: squash(doc.title || "", NAME_MAX),
       refs: refs.size,
+      alerts: out.alerts,
     };
   }
 
@@ -801,6 +937,17 @@ export function createPageHands(cfg) {
     var args = step && step.args && typeof step.args === "object" ? step.args : {};
     var ref = step && typeof step.ref === "string" ? step.ref : "";
     var el = ref ? refs.get(ref) || null : null;
+    if (ref && (!el || el.isConnected === false)) {
+      // Redrawn since the reading: the same control, if there is exactly one.
+      var print = prints.get(ref);
+      var fresh = outlinePage(doc.body || doc.documentElement, env);
+      var again = refind(print, fresh);
+      if (again) {
+        refs = fresh.refs;
+        prints = fresh.prints;
+        el = refs.get(again) || null;
+      }
+    }
     var label = stepLabel(el);
     function done(ok, message, extra) {
       var out = { ok: ok, message: squash(message, 300), label: label };
@@ -825,6 +972,12 @@ export function createPageHands(cfg) {
         if (!isPlainPath(path)) return done(false, "The box only goes to pages on this site.");
         cfg.navigate(path, step.id);
         return done(true, "Went to " + path);
+      }
+      if (tool === "look_up") {
+        if (!cfg.lookUp) return done(false, "This page has nothing to look up.");
+        return cfg.lookUp(String(args.factId || ""), args.args).then(function (r) {
+          return done(r.ok, r.message || (r.ok ? "Looked it up" : "It could not be looked up"), r.ok ? { data: r.data } : null);
+        });
       }
       if (tool === "action") {
         return cfg.act(String(args.actionId || ""), args.args).then(function (r) {
@@ -864,5 +1017,16 @@ export function createPageHands(cfg) {
     return done(false, "The box cannot do that kind of step.");
   }
 
-  return { read: read, run: run, element: function (ref) { return refs.get(ref) || null; } };
+  return {
+    read: read,
+    run: run,
+    element: function (ref) {
+      return refs.get(ref) || null;
+    },
+    /** What [el] is, for a question about it — see `pickContext`. */
+    pick: function (el) {
+      return pickContext(el, env);
+    },
+    isHidden: isHidden,
+  };
 }

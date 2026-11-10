@@ -1300,7 +1300,7 @@ describe("the app's own actions, run by the box", () => {
     assert.equal(JSON.stringify(told).includes("run"), false);
     // postMessage clones: a function in it would throw and lose the open.
     assert.deepEqual(structuredClone(told), told);
-    assert.match(core, /if \(actions\.length\) message\.actions = describeActions\(actions\);\n[\s\S]{0,400}?postToFrame\(message\);/);
+    assert.match(core, /if \(actions\.length\) message\.actions = describeActions\(actions\);\n[\s\S]{0,900}?postToFrame\(message\);/);
   });
 
   it("hands run only the declared values, as strings", async () => {
@@ -1346,7 +1346,7 @@ describe("the app's own actions, run by the box", () => {
   it("is set from code, before or after the script loads, and never from an attribute", () => {
     assert.match(core, /var actions = readActions\(opts\.actions\);/);
     assert.match(core, /setActions: function \(list\) \{\n\s+actions = readActions\(list\);/);
-    assert.match(tag, /window\.avokaido\.actions = actionsApi;/);
+    assert.match(tag, /window\.avokaido\.actions = registry\(readActions, widget\.setActions, window\.avokaido\.actions\);/);
     assert.match(tag, /early\.queue\.forEach/);
     assert.equal(/data-actions/.test(dist), false);
   });
