@@ -153,6 +153,13 @@ export interface IdeaWidgetOptions {
    * `run` never leaves the page.
    */
   actions?: readonly IdeaWidgetAction[] | null;
+  /**
+   * What the box may look up in your app, to answer "why is this like
+   * that?" from a record's real state: read-only functions of yours, with
+   * the same shape and caps as an action. Only the description is sent to
+   * the chat, never `get`. Replace the list with `setFacts()`.
+   */
+  facts?: readonly IdeaWidgetFact[] | null;
 }
 
 /**
@@ -178,6 +185,24 @@ export interface IdeaWidgetAction {
   ): IdeaWidgetActionResult | void | PromiseLike<IdeaWidgetActionResult | void>;
 }
 
+export interface IdeaWidgetFact {
+  /** Matches `/^[a-z0-9][a-z0-9-]*$/`, up to 40 characters. */
+  id: string;
+  /** What the person is shown ("Looked up …"), up to 40 characters. */
+  name: string;
+  /** What it tells, for the chat to choose by — up to 200 characters. */
+  about: string;
+  /** At most 6. */
+  params?: readonly IdeaWidgetActionParam[];
+  /**
+   * Looks it up. `args` holds only the declared params, each a string.
+   * Return (a promise of) anything JSON can write; it is sent with the
+   * question as JSON, emails and phone numbers replaced, cut at 4,000
+   * characters, and not kept. A throw or a rejection is "could not be
+   * looked up", with its message. Never change anything here.
+   */
+  get(args: Record<string, string>): unknown;
+}
 export interface IdeaWidgetActionParam {
   /** Matches `/^[a-z0-9][a-z0-9-]*$/`, up to 30 characters. */
   name: string;
@@ -310,6 +335,8 @@ export interface IdeaWidget {
    * changes, and with `[]` for nothing. The chat is told on its next open.
    */
   setActions(actions: readonly IdeaWidgetAction[] | null): void;
+  /** Replaces what the box may look up in your app. See `facts`. */
+  setFacts(facts: readonly IdeaWidgetFact[] | null): void;
   /** Whether the button would show for this visitor on this page right now. */
   isShown(): boolean;
 }
@@ -365,6 +392,13 @@ declare global {
       actions?: {
         set(actions: readonly IdeaWidgetAction[]): void;
         register(action: IdeaWidgetAction): void;
+        unregister(id: string): void;
+        queue?: Array<["set" | "register" | "unregister", unknown]>;
+      };
+      /** What the box may look up in your app — the same as `actions`. */
+      facts?: {
+        set(facts: readonly IdeaWidgetFact[]): void;
+        register(fact: IdeaWidgetFact): void;
         unregister(id: string): void;
         queue?: Array<["set" | "register" | "unregister", unknown]>;
       };
