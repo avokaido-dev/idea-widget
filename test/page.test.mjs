@@ -377,8 +377,8 @@ describe("the widget's half", () => {
   });
 
   it("leaves a note before a click, so the chat carries on after a new page", () => {
-    assert.match(core, /if \(leaves\) leaveReopen\(id\);/);
-    assert.match(core, /if \(leaves\) takeBackReopen\(id\);/);
+    assert.match(core, /if \(leaves\) leaveReopen\(stepId\);/);
+    assert.match(core, /if \(leaves\) takeBackReopen\(stepId\);/);
     assert.match(core, /if \(note\.step != null\) resumedStep = note\.step;/);
     assert.match(core, /message\.resumed = \{ id: resumedStep \};/);
   });

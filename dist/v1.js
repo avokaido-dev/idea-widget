@@ -5622,8 +5622,8 @@ function createIdeaWidget(options) {
   }
 
   /**
-   * ONE STEP ON THIS PAGE, for the person — `avokaido:step { id, tool, ref,
-   * args, allowed }` from the chat, answered with `avokaido:stepped { id, ok,
+   * ONE STEP ON THIS PAGE, for the person — `avokaido:step { id, stepId?,
+   * tool, ref, args, allowed }` from the chat, answered with `avokaido:stepped { id, ok,
    * message, label, confirm?, page? }`: how it went and the page as it is
    * after it, so the chat's next step is about the screen as it now is.
    *
@@ -5664,20 +5664,23 @@ function createIdeaWidget(options) {
       answer({ ok: false, message: "off", label: "" }, false);
       return;
     }
+    // The chat's own name for the step, kept on the note a page load
+    // leaves behind, so the chat knows which one it was in the middle of.
+    var stepId = data && typeof data.stepId === "string" && data.stepId.length <= 80 ? data.stepId : id;
     var step = {
-      id: id,
+      id: stepId,
       tool: data && typeof data.tool === "string" ? data.tool : "",
       ref: data && typeof data.ref === "string" ? data.ref : "",
       args: data && data.args && typeof data.args === "object" ? data.args : {},
       allowed: !!(data && data.allowed === true),
     };
     var leaves = step.tool === "click";
-    if (leaves) leaveReopen(id);
+    if (leaves) leaveReopen(stepId);
     handsNow().run(step).then(function (result) {
       // Long enough for the app to draw what the step changed — a menu open,
       // a row added, the next screen of a router.
       setTimeout(function () {
-        if (leaves) takeBackReopen(id);
+        if (leaves) takeBackReopen(stepId);
         answer(result, result.ok || !!result.confirm);
       }, result.ok ? STEP_SETTLE_MS : 0);
     });

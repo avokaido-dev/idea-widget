@@ -977,7 +977,7 @@ From the chat to the widget:
 | `avokaido:cover` / `avokaido:uncover` | — | The chat shows its own scrim: the widget's × and grip go under it. |
 | `avokaido:action` | `id`, `actionId`, `args` | The person pressed **Do it** on an action the app registered. `args` is `{ name: value }`. The widget calls that action's `run` with the declared params only, and answers `avokaido:acted`. |
 | `avokaido:read` | `id` | The box reads the page: answers `avokaido:page`. |
-| `avokaido:step` | `id`, `tool`, `ref?`, `args`, `allowed?` | One step on the page (`point`, `click`, `type`, `select`, `scroll`, `navigate`, `action`). Checked and done by `src/page.js`, then answered with `avokaido:stepped`. `allowed: true` is the person's yes to a step that waited for one. |
+| `avokaido:step` | `id`, `stepId?`, `tool`, `ref?`, `args`, `allowed?` | One step on the page (`point`, `click`, `type`, `select`, `scroll`, `navigate`, `action`). Checked and done by `src/page.js`, then answered with `avokaido:stepped`. `allowed: true` is the person's yes to a step that waited for one. |
 | `avokaido:unpoint` | — | Takes away the ring and note a `point` step drew. |
 | `avokaido:navigate` | `id`, `path` | A button under an answer to a question about the app, pressed. Only a plain path on this site: answers `avokaido:navigated`, then emits a cancelable `avokaido:navigate` on the page, and goes there itself unless the page called `preventDefault()` — opening the box again on the page it lands on. |
 
@@ -985,7 +985,7 @@ From the widget to the chat:
 
 | Message | Payload | When |
 |---|---|---|
-| `avokaido:open` | `route?`, `at?`, `openMs?`, `actions?`, `pageAgent`, `resumed?` | Every open (and again once the chat has painted). `actions` is what the app registered, as `[{ id, name, about, params: [{ name, about, required }] }]` — never `run` — and absent when there are none. `pageAgent` is whether the box may read and act on this page (absent from an older widget: no). `resumed: { id }` is the step that sent the page here, once, on the page it landed on. |
+| `avokaido:open` | `route?`, `at?`, `openMs?`, `actions?`, `pageAgent`, `resumed?` | Every open (and again once the chat has painted). `actions` is what the app registered, as `[{ id, name, about, params: [{ name, about, required }] }]` — never `run` — and absent when there are none. `pageAgent` is whether the box may read and act on this page (absent from an older widget: no). `resumed: { id }` is the step that sent the page here (its `stepId`, else its `id`), once, on the page it landed on. |
 | `avokaido:page` | `id`, `page` or `error` | The answer to `avokaido:read`: `page` is `{ text, path, title, refs }`, `error` is `"off"` or `"failed"`. |
 | `avokaido:stepped` | `id`, `ok`, `message`, `label`, `confirm?`, `page?` | The answer to every `avokaido:step`. `confirm` says why it waits for the person's yes (nothing was done); `page` is the page read again after a step that was done, or that waits. `message` is `"off"` with `pageAgent: false`. |
 | `avokaido:closed` | — | Put away and kept. |
