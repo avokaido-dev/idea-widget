@@ -854,6 +854,10 @@ export function createIdeaWidget(options) {
   var label = opts.label || "Suggest a change";
   var launcher = String(opts.launcher || "floating").toLowerCase();
   if (LAUNCHERS.indexOf(launcher) < 0) launcher = "floating";
+  // No more pill (AVO-886): the words "Suggest a change" are never drawn in
+  // place of the avocado. An embed that asks for the pill, or says nothing,
+  // gets the round mark; `"none"` still means no button at all.
+  if (launcher === "floating") launcher = "icon";
   /**
    * THE BUTTON: THE PILL, OR THE ROUND MARK. The code says which
    * (`launcher`); the team can choose the other one in Settings → Design
@@ -887,7 +891,9 @@ export function createIdeaWidget(options) {
   function rememberedLauncher() {
     try {
       var saved = localStorage.getItem(LAUNCHER_KEY);
-      return saved === "icon" || saved === "floating" ? saved : null;
+      // A pill chosen here before AVO-886 is ignored: the person's own choice
+      // can only be the round avocado now.
+      return saved === "icon" ? saved : null;
     } catch (e) {
       return null;
     }
@@ -1316,6 +1322,8 @@ export function createIdeaWidget(options) {
       // first shown (`settle`), so it is first seen as the team chose it.
       var teamShape =
         body.launcher === "icon" || body.launcher === "floating" ? body.launcher : null;
+      // A team that chose the pill before AVO-886 gets the avocado too.
+      if (teamShape === "floating") teamShape = "icon";
       if (teamShape !== teamLauncher) {
         teamLauncher = teamShape;
         drawLauncher();
@@ -1482,6 +1490,9 @@ export function createIdeaWidget(options) {
   function setLauncher(next) {
     if (next !== "icon" && next !== "floating") return;
     if (launcher === "none") return;
+    // Only back to the round avocado (AVO-886): a chat loaded before its
+    // More menu lost the switch to the words may still ask for the pill.
+    if (next === "floating") return;
     personalLauncher = next;
     try {
       localStorage.setItem(LAUNCHER_KEY, next);
@@ -4100,19 +4111,17 @@ export function createIdeaWidget(options) {
     if (face.getAttribute("data-shape") !== shape()) {
       face.setAttribute("data-shape", shape());
       el.classList.toggle("icon", round);
-      if (round) {
-        // The liquid's clip needs an id; one per mark, so two widgets on a
-        // page never share one.
-        var clip = "avk-liquid-" + ++markSeq;
-        face.innerHTML =
-          '<svg class="mark" viewBox="' + MARK_VIEWBOX + '" aria-hidden="true">' +
-          '<defs><clipPath id="' + clip + '"><path class="surface" d=""/></clipPath></defs>' +
-          '<g class="ghost">' + MARK_SHAPES + "</g>" +
-          '<g class="liquid" clip-path="url(#' + clip + ')">' +
-          '<path class="body" d="' + MARK_BODY + '"/>' + MARK_SHAPES + "</g></svg>";
-      } else {
-        face.textContent = label;
-      }
+      // Always the avocado (AVO-886): the label is its accessible name and
+      // tip, never text drawn in its place.
+      // The liquid's clip needs an id; one per mark, so two widgets on a
+      // page never share one.
+      var clip = "avk-liquid-" + ++markSeq;
+      face.innerHTML =
+        '<svg class="mark" viewBox="' + MARK_VIEWBOX + '" aria-hidden="true">' +
+        '<defs><clipPath id="' + clip + '"><path class="surface" d=""/></clipPath></defs>' +
+        '<g class="ghost">' + MARK_SHAPES + "</g>" +
+        '<g class="liquid" clip-path="url(#' + clip + ')">' +
+        '<path class="body" d="' + MARK_BODY + '"/>' + MARK_SHAPES + "</g></svg>";
       liquid.drawn = false;
     }
     drawPending();
