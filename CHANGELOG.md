@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The box opens in its corner by the launcher every time, even after it was
+  dragged earlier in the session. Only the place is reset: the conversation
+  and the size the person chose are kept.
+
 ## 1.24.0
 
 **Faster, and seen to happen.**

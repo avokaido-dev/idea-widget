@@ -4644,9 +4644,14 @@ function createIdeaWidget(options) {
   }
 
   /**
-   * Where the box goes for this open: under its anchor, or — for an open
-   * with none after one with an anchor — back where the person last put it,
-   * or its corner.
+   * Where the box goes for this open: under its anchor, or its corner by
+   * the launcher.
+   *
+   * EVERY OPEN STARTS IN THE CORNER, even after the box was dragged earlier
+   * in the session: a box that reopens where it was last left does not look
+   * like it came from the launcher that was just pressed. A drag moves the
+   * box while it is open and is forgotten on close. Only the place is reset;
+   * the size and the conversation stay as they were.
    */
   function placeForOpen(at) {
     var box = at ? anchorBox(at) : null;
@@ -4655,13 +4660,10 @@ function createIdeaWidget(options) {
       anchoredBox = true;
       return;
     }
-    if (!anchoredBox) return;
     anchoredBox = false;
     overlay.style.left = overlay.style.top = "";
     overlay.style.right = overlay.style.bottom = "";
     overlay.classList.remove("placed");
-    var saved = rememberedPlace();
-    if (saved) placeAt(overlay, saved.left, saved.top);
   }
 
   /**
@@ -4684,13 +4686,12 @@ function createIdeaWidget(options) {
       overlay.inert = true;
       overlay.setAttribute("aria-hidden", "true");
     }
-    // A new box: placed as the person left it, with our own grip and × until
-    // the page inside says it draws its own (`own-chrome` is a class on this
-    // element, so a fresh frame starts without it).
+    // A new box: in its corner, at the size the person left it, with our own
+    // grip and × until the page inside says it draws its own (`own-chrome` is
+    // a class on this element, so a fresh frame starts without it).
     anchoredBox = false;
     pageDrag = null;
     applyRememberedSize(overlay);
-    placeRemembered(overlay);
 
     var button = document.createElement("button");
     button.className = "close";
@@ -5176,6 +5177,8 @@ function createIdeaWidget(options) {
     return saved;
   }
 
+  // NOT CALLED ON OPEN any more: every open starts in the corner by the
+  // launcher (see `placeForOpen`), so a drag lasts until the box is closed.
   function placeRemembered(el) {
     // Read before the element is measurable, so the clamp runs again on the
     // first frame — offsetWidth is 0 until it is in the document.
