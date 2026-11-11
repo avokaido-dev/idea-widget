@@ -3816,6 +3816,8 @@ function createIdeaWidget(options) {
     root = host.attachShadow({ mode: "open" });
     root.appendChild(styles());
     document.body.appendChild(host);
+    // Already pinched in when it first appears (AVO-912).
+    followVisualViewport();
   }
 
   /**
@@ -4105,6 +4107,9 @@ function createIdeaWidget(options) {
       /* Nothing here cascades out of the shadow root, and nothing cascades in
          except inherited properties — which is why font-family is stated. */
       ":host { all: initial }",
+      /* The host takes no clicks while it covers the window under a pinch
+         zoom (AVO-912); what it holds still does. */
+      ".launcher, .dock, .scrim { pointer-events: auto }",
       /* `hidden` loses to any `display` rule, and the launcher has one. Stated
          so the audience gate can hide it without knowing its layout. */
       ".launcher[hidden] { display: none !important }",
@@ -5683,6 +5688,47 @@ function createIdeaWidget(options) {
     requestAnimationFrame(reclamp);
   }
   window.addEventListener("resize", onWindowResize);
+
+  /**
+   * PINCH ZOOM MOVES THE VISIBLE PART, NOT THE WINDOW (AVO-912). Ctrl/Cmd +
+   * scroll shrinks the window, and the rules above follow it; a pinch (or a
+   * trackpad's) only magnifies a piece of the page, and `position: fixed` stays
+   * on the unmagnified window — so the box and its launcher ended up outside
+   * the part of the screen anybody could see. While pinched, the host is
+   * sized as the window, moved onto the visible part and scaled back down to
+   * it: its fixed children are then laid out in that box, and every corner,
+   * clamp and size limit above lands inside what is on screen. Clicks go
+   * through the host to the page; only the launcher and the box take them.
+   * Unpinched, the host is left exactly as it was before.
+   */
+  var vv = window.visualViewport || null;
+  function followVisualViewport() {
+    if (!host || !vv) return;
+    var scale = vv.scale || 1;
+    if (Math.abs(scale - 1) < 0.01) {
+      host.style.transform = "";
+      host.style.transformOrigin = "";
+      host.style.width = "0";
+      host.style.height = "0";
+      host.style.pointerEvents = "";
+      return;
+    }
+    host.style.width = window.innerWidth + "px";
+    host.style.height = window.innerHeight + "px";
+    host.style.pointerEvents = "none";
+    host.style.transformOrigin = "0 0";
+    host.style.transform =
+      "translate(" + vv.offsetLeft + "px," + vv.offsetTop + "px) scale(" + 1 / scale + ")";
+  }
+  if (vv) {
+    vv.addEventListener("resize", followVisualViewport);
+    vv.addEventListener("scroll", followVisualViewport);
+    followVisualViewport();
+    teardown.push(function () {
+      vv.removeEventListener("resize", followVisualViewport);
+      vv.removeEventListener("scroll", followVisualViewport);
+    });
+  }
   // Rotation on iOS reports the new size a frame late, so the resize event
   // above can clamp against the dimensions being left behind.
   window.addEventListener("orientationchange", onOrientationChange);
