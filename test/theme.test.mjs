@@ -24,6 +24,7 @@ import {
   launcherFont,
   matchTheme,
   merge,
+  pageFacts,
   pageReadable,
   paletteOf,
   readCanvas,
@@ -613,6 +614,102 @@ describe("the team's design system, from the audience check", () => {
     );
     assert.equal(m.vars["--w-bg"], "#0F1511");
     assert.equal(m.waiting, true);
+  });
+});
+
+// WCAG contrast, written out here so the test does not lean on the code it checks.
+function lum(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function ratio(a, b) {
+  const x = lum(a);
+  const y = lum(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+function foundFrom(primary, background, text) {
+  const mk = (v) => ({ v, src: "test", from: "page" });
+  return { primary: mk(primary), background: mk(background), text: mk(text) };
+}
+
+describe("contrast on the launcher and the dock", () => {
+  const hosts = {
+    light: foundFrom("#3451D1", "#FFFFFF", "#1B2033"),
+    dark: foundFrom("#005236", "#0F1511", "#C0C9C1"),
+    "pale primary on white": foundFrom("#FFD60A", "#FFFFFF", "#1B2033"),
+    "faint text on white": foundFrom("#3451D1", "#FFFFFF", "#CCCCCC"),
+    "faint text on dark": foundFrom("#3451D1", "#111111", "#222222"),
+  };
+
+  for (const [name, host] of Object.entries(hosts)) {
+    it(`keeps text readable for a ${name} host`, () => {
+      const t = derive(host);
+      assert.ok(ratio(t.text, t.bg) >= 4.5, "text on the dock");
+      assert.ok(ratio(t.onPrimary, t.primary) >= 4.5, "text on the launcher");
+      assert.ok(ratio(t.primary, t.bg) >= 3, "the launcher against the page");
+      assert.ok(ratio(t.primaryText, t.bg) >= 4.5, "primary used as text");
+      assert.ok(ratio(t.muted, t.bubble) >= 4.5, "muted text in a bubble");
+    });
+  }
+
+  it("falls back to Avo's ink when the page's text is too faint on light", () => {
+    const t = derive(hosts["faint text on white"]);
+    assert.equal(t.text, "#231502");
+    assert.equal(t.src.text.tag, "avo");
+  });
+
+  it("falls back to Avo's paper when the page's text is too faint on dark", () => {
+    const t = derive(hosts["faint text on dark"]);
+    assert.equal(t.dark, true);
+    assert.equal(t.text, "#F5F3EC");
+  });
+
+  it("deepens a primary that is too pale for its background, and says so", () => {
+    const t = derive(hosts["pale primary on white"]);
+    assert.notEqual(t.primary, "#FFD60A");
+    assert.match(t.src.primary.text, /deepened to pass 3:1/);
+  });
+
+  it("leaves a primary that already holds 3:1 as it was", () => {
+    const t = derive(hosts.light);
+    assert.equal(t.primary, "#3451D1");
+    assert.equal(t.src.primary.text.includes("deepened"), false);
+  });
+});
+
+describe("pageFacts", () => {
+  const rootOf = ({ canvases = [], flutter = false, render = null } = {}) => ({
+    getAttribute: (n) => (n === "data-render" ? render : null),
+    ownerDocument: {
+      defaultView: { innerWidth: 1000, innerHeight: 500 },
+      documentElement: {},
+      querySelectorAll: () => canvases,
+      querySelector: () => (flutter ? {} : null),
+    },
+  });
+  const box = (left, top, right, bottom) => ({
+    getBoundingClientRect: () => ({ left, top, right, bottom }),
+  });
+
+  it("measures the largest share of the window one canvas covers", () => {
+    const f = pageFacts(rootOf({ canvases: [box(0, 0, 500, 250), box(0, 0, 1000, 250)] }));
+    assert.equal(f.canvasShare, 0.5);
+  });
+
+  it("counts only the part of a canvas inside the window", () => {
+    const f = pageFacts(rootOf({ canvases: [box(-500, 0, 500, 500)] }));
+    assert.equal(f.canvasShare, 0.5);
+  });
+
+  it("reports data-render and Flutter", () => {
+    const f = pageFacts(rootOf({ render: "canvas", flutter: true }));
+    assert.equal(f.render, "canvas");
+    assert.equal(f.flutter, true);
+    assert.equal(f.canvasShare, 0);
+    assert.equal(pageReadable(f), false);
   });
 });
 
