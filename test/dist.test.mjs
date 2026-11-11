@@ -531,7 +531,167 @@ describe("the page's own header", () => {
   it("remembers where the header drag put it", () => {
     assert.match(core, /var at = placeAt\(overlay, began\.left \+ dx, began\.top \+ dy\);\s+try \{\s+localStorage\.setItem\(STORE_KEY/);
   });
+
+  it("opens in its corner by the launcher every time, wherever it was dragged", () => {
+    const body = core.match(/function placeForOpen\(at\) \{[\s\S]*?\n  \}\n/)[0];
+    assert.match(body, /overlay\.style\.left = overlay\.style\.top = "";/);
+    assert.match(body, /overlay\.style\.right = overlay\.style\.bottom = "";/);
+    assert.match(body, /overlay\.classList\.remove\("placed"\);/);
+    assert.equal(/rememberedPlace|localStorage|STORE_KEY/.test(body), false);
+    // Not only after an anchored open: the reset is unconditional.
+    assert.equal(/if \(!anchoredBox\) return;/.test(body), false);
+    // A fresh frame is not put back where it was either.
+    const build = core.match(/function buildFrame\(parked\) \{[\s\S]*?\n  \}\n/)[0];
+    assert.equal(/placeRemembered/.test(build), false);
+    // Closing parks the frame; the conversation is kept for the next open.
+    assert.match(core, /if \(reason === "submitted" \|\| reason === "page"\) discard\(\);\s+else park\(\);/);
+  });
+
+  it("dragged, closed and reopened: back in its corner, with the conversation still there", () => {
+    const w = runPanel();
+    w.show();
+    const overlay = w.state.overlay;
+    const frame = w.state.frame;
+    assert.equal(overlay.style.left, "");
+    assert.equal(overlay.classList.contains("placed"), false);
+
+    // Drag it by the grip.
+    w.drag({ fromX: 1100, fromY: 220, toX: 400, toY: 100 });
+    assert.notEqual(overlay.style.left, "");
+    assert.notEqual(overlay.style.top, "");
+    assert.equal(overlay.classList.contains("placed"), true);
+
+    // Close it with the ×.
+    w.close("button");
+    assert.equal(w.state.shown, false);
+    assert.equal(overlay.classList.contains("parked"), true);
+    assert.equal(w.discarded(), 0);
+
+    // Reopen it from the launcher.
+    w.show();
+    assert.equal(w.state.overlay, overlay, "the same box comes back");
+    assert.equal(overlay.classList.contains("parked"), false);
+    assert.equal(overlay.style.left, "");
+    assert.equal(overlay.style.top, "");
+    assert.equal(overlay.style.right, "");
+    assert.equal(overlay.style.bottom, "");
+    assert.equal(overlay.classList.contains("placed"), false, "in its default corner");
+    // The conversation lives in the frame: the same frame, not rebuilt, with
+    // what was said before still in it.
+    assert.equal(w.state.frame, frame);
+    assert.deepEqual(frame.transcript, ["Hej!", "Knappen är fel."]);
+    assert.equal(w.posted().some((m) => m && m.type === "avokaido:reset"), false);
+  });
 });
+
+/** The source of one named function in src/widget.js, braces matched. */
+function sourceOf(name) {
+  const start = core.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, name);
+  let depth = 0;
+  for (let i = core.indexOf("{", start); i < core.length; i++) {
+    if (core[i] === "{") depth++;
+    else if (core[i] === "}" && --depth === 0) return core.slice(start, i + 1);
+  }
+  throw new Error(`unbalanced ${name}`);
+}
+
+function fakeElement() {
+  const classes = new Set();
+  const listeners = {};
+  return {
+    style: {},
+    inert: false,
+    attrs: {},
+    offsetWidth: 384,
+    offsetHeight: 588,
+    isConnected: true,
+    listeners,
+    classList: {
+      add: (...c) => c.forEach((x) => classes.add(x)),
+      remove: (...c) => c.forEach((x) => classes.delete(x)),
+      contains: (c) => classes.has(c),
+      toggle: (c, on) => (on ?? !classes.has(c) ? classes.add(c) : classes.delete(c)),
+    },
+    setAttribute(k, v) { this.attrs[k] = v; },
+    removeAttribute(k) { delete this.attrs[k]; },
+    addEventListener(t, f) { (listeners[t] ||= []).push(f); },
+    removeEventListener(t, f) { listeners[t] = (listeners[t] || []).filter((g) => g !== f); },
+    setPointerCapture() {},
+    releasePointerCapture() {},
+    hasPointerCapture() { return true; },
+    focus() {},
+    remove() { this.isConnected = false; },
+    getBoundingClientRect() {
+      // Unplaced, the box sits in its bottom-right corner of a 1280×800 window.
+      const left = this.style.left ? parseFloat(this.style.left) : 1280 - 16 - 384;
+      const top = this.style.top ? parseFloat(this.style.top) : 800 - 16 - 588;
+      return { left, top, right: left + 384, bottom: top + 588, width: 384, height: 588 };
+    },
+  };
+}
+
+/**
+ * Runs the widget's own drag, open and close code against a stand-in box.
+ * Every helper those functions call that is not under test is a no-op.
+ */
+function runPanel() {
+  const overlay = fakeElement();
+  overlay.classList.add("dock", "bottom-right", "parked");
+  const frame = fakeElement();
+  frame.transcript = ["Hej!", "Knappen är fel."];
+  frame.contentWindow = { postMessage() {} };
+  const doc = fakeElement();
+  doc.activeElement = null;
+  const win = fakeElement();
+  win.innerWidth = 1280;
+  win.innerHeight = 800;
+  const posted = [];
+  let discarded = 0;
+  const state = {
+    overlay, frame, document: doc, window: win,
+    shown: false, pageDrag: null, anchoredBox: false, lastFocus: null,
+    frameReady: true, paintedAt: 1, readyTimer: null, scrim: null,
+    openedAt: 0, openReported: false, root: null,
+    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    requestAnimationFrame: (f) => f(),
+    postToFrame: (m) => posted.push(m),
+    discard: () => { discarded++; },
+  };
+  const scope = new Proxy(state, {
+    has: (t, k) => typeof k === "string" && (k in t || !(k in globalThis)),
+    get: (t, k) => (k in t ? t[k] : k === Symbol.unscopables ? undefined : () => {}),
+    set: (t, k, v) => { t[k] = v; return true; },
+  });
+  const names = ["clamp", "placeAt", "startDrag", "placeForOpen", "show", "close", "park"];
+  const make = new Function(
+    "scope",
+    `with (scope) {\n${names.map(sourceOf).join("\n")}\nreturn { startDrag, show, close };\n}`,
+  );
+  const fns = make(scope);
+  const grip = fakeElement();
+  const fire = (type, e) => {
+    for (const el of [doc, win, grip, overlay]) {
+      for (const f of el.listeners[type] || []) f(e);
+    }
+  };
+  return {
+    state,
+    show: () => fns.show(),
+    close: (reason) => fns.close(reason),
+    discarded: () => discarded,
+    posted: () => posted,
+    drag({ fromX, fromY, toX, toY }) {
+      const e = (x, y) => ({
+        button: 0, clientX: x, clientY: y, pointerId: 1,
+        target: grip, currentTarget: grip, preventDefault() {},
+      });
+      fns.startDrag(e(fromX, fromY));
+      fire("pointermove", e(toX, toY));
+      fire("pointerup", e(toX, toY));
+    },
+  };
+}
 
 describe("looking like the site", () => {
   it("builds the theme matcher into the script", () => {
