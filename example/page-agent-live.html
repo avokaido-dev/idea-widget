@@ -65,6 +65,14 @@
         </form>`;
     }
     draw();
+    // ?router=1: a tiny single-page router that follows popstate, as React
+    // Router, go_router and the rest do. Without it, the page has none.
+    window.loadedAt = Date.now();
+    if (new URLSearchParams(location.search).has("router")) {
+      window.addEventListener("popstate", () => {
+        document.querySelector("main h1").textContent = "Routed to " + location.pathname;
+      });
+    }
     const widget = createIdeaWidget({
       key: "avk_bench",
       origin: location.origin,

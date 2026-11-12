@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.24.0 — one script tag on your page.
+ * Avokaido idea widget 1.25.0 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -1430,6 +1430,63 @@ function settleFor(tool) {
   return 60;
 }
 
+/**
+ * A FLUTTER PAGE THAT CANNOT BE READ. Flutter draws on a canvas; what it puts
+ * in the page for a reader is its accessibility tree, and that tree is only
+ * built once accessibility is switched on — by a person's own key or click,
+ * or by the app (`SemanticsBinding.instance.ensureSemantics()`), never by a
+ * script on the page. Until then the page is one hidden "Enable
+ * accessibility" button, and a reading that says nothing else reads as an
+ * empty page still loading. This line says what it is instead; the server
+ * matches it (`idea_agent.ts`), so change both together.
+ */
+var UNREADABLE_FLUTTER = "page could not be read: it is drawn on a canvas (Flutter) and its accessibility is off";
+
+/**
+ * `"none"` for a page that is not Flutter's, `"readable"` for one whose
+ * accessibility tree is built, `"off"` for one whose is not.
+ */
+function flutterState(doc) {
+  if (!doc || typeof doc.querySelector !== "function") return "none";
+  if (!doc.querySelector("flutter-view, flt-glass-pane")) return "none";
+  var host = doc.querySelector("flt-semantics-host");
+  return host && host.querySelector("flt-semantics") ? "readable" : "off";
+}
+
+/**
+ * WHEN AND WHERE THE PERSON IS ASKING: "today at 10" means their today, in
+ * their time zone — `now: Thursday 12 November 2026, 10:02 (Europe/Stockholm,
+ * UTC+01:00)`. The server matches the `now:` prefix.
+ */
+function nowLine(date, timeZone) {
+  var d = date || new Date();
+  var zone = timeZone;
+  try {
+    zone = zone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch (e) {
+    zone = "";
+  }
+  var day = "";
+  try {
+    var parts = new Intl.DateTimeFormat("en-GB", {
+      weekday: "long", day: "numeric", month: "long", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: zone || undefined,
+    }).formatToParts(d);
+    var get = function (t) {
+      for (var i = 0; i < parts.length; i++) if (parts[i].type === t) return parts[i].value;
+      return "";
+    };
+    day = get("weekday") + " " + get("day") + " " + get("month") + " " + get("year") + ", " + get("hour") + ":" + get("minute");
+  } catch (e) {
+    day = d.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  }
+  var off = -d.getTimezoneOffset();
+  var sign = off >= 0 ? "+" : "-";
+  var abs = Math.abs(off);
+  var utc = "UTC" + sign + String(Math.floor(abs / 60)).padStart(2, "0") + ":" + String(abs % 60).padStart(2, "0");
+  return "now: " + day + " (" + (zone ? zone + ", " : "") + utc + ")";
+}
+
 /** The longest description of a picked part of the page. */
 var PICK_MAX_CHARS = 2000;
 /** The most alerts a reading lists for the chat's suggestions. */
@@ -2233,7 +2290,10 @@ function createPageHands(cfg) {
 
   function read() {
     var body = doc.body || doc.documentElement;
-    var out = outlinePage(body, env);
+    var flutter = flutterState(doc);
+    var out = flutter === "off"
+      ? { text: "", refs: new Map(), prints: new Map(), alerts: [] }
+      : outlinePage(body, env);
     refs = out.refs;
     prints = out.prints;
     var dialog = doc.querySelector && doc.querySelector("dialog[open], [role=dialog][aria-modal=true]");
@@ -2244,8 +2304,13 @@ function createPageHands(cfg) {
         Math.max(0, Math.round((doc.documentElement.scrollHeight || 0) - (win.innerHeight || 0))),
     ];
     if (dialog && !isHidden(dialog)) header.push("a dialog is open over the page");
+    header.push(nowLine(new Date()));
+    // Nothing to read, said as what it is: never an empty page that could be
+    // taken for one still loading.
+    if (flutter === "off") header.push(UNREADABLE_FLUTTER);
     return {
-      text: header.join("\n") + "\n\n" + out.text,
+      unreadable: flutter === "off" ? "flutter" : undefined,
+      text: header.join("\n") + (out.text ? "\n\n" + out.text : ""),
       path: squash(win.location.pathname + win.location.hash, 200),
       title: squash(doc.title || "", NAME_MAX),
       refs: refs.size,
@@ -5779,20 +5844,100 @@ function createIdeaWidget(options) {
     var id = data && typeof data.id === "number" ? data.id : 0;
     if (!isPlainPath(path)) return;
     postToFrame({ type: "avokaido:navigated", id: id });
+    routeTo(path, null);
+  }
+
+  /**
+   * TAKES THE PAGE TO [path] WITHOUT LOADING IT AGAIN, WHEREVER IT CAN. A full
+   * load throws away what the person has open, and a single-page app — every
+   * Flutter app, most React and Vue ones — starts again from nothing, which
+   * reads as the site crashing. In order:
+   *
+   *   1. The app's own router: a cancelable `avokaido:navigate` on the page,
+   *      which an app that routes itself takes with `preventDefault()` (the
+   *      Dart package's `onNavigate`).
+   *   2. In place. A hash-routed app (`/#/calendar`) by its hash; any other by
+   *      the history API, then `popstate`, which every single-page router
+   *      follows for the back button. Then it is checked: when nothing on the
+   *      page changed within the moment a router takes, the app did not
+   *      follow, and the browser goes there after all. A Flutter page whose
+   *      accessibility is off changes nothing a script can see, so for one it
+   *      is taken as followed.
+   *   3. A full load, with the note that opens the box again on the page it
+   *      lands on ([REOPEN_KEY]), carrying [stepId] for a step.
+   */
+  var ROUTE_WAIT_MS = 800;
+
+  function routeTo(path, stepId) {
     var routed = false;
     try {
       routed = !document.dispatchEvent(
-        new CustomEvent("avokaido:navigate", {
-          detail: { path: path },
-          cancelable: true,
-        })
+        new CustomEvent("avokaido:navigate", { detail: { path: path }, cancelable: true }),
       );
     } catch (e) {
-      /* No CustomEvent: the browser goes there, below. */
+      /* No CustomEvent: in place, below. */
     }
     if (routed) return;
-    leaveReopen(null);
-    location.assign(path);
+    var full = function () {
+      leaveReopen(stepId);
+      location.assign(path);
+    };
+    if (/^#\//.test(location.hash)) {
+      location.hash = "#" + path;
+      return;
+    }
+    var canvas = flutterState(document) === "off";
+    var changed = false;
+    var watch = null;
+    try {
+      if (!canvas && typeof MutationObserver !== "undefined") {
+        watch = new MutationObserver(function (records) {
+          for (var i = 0; i < records.length; i++) {
+            if (!host || !host.contains(records[i].target)) changed = true;
+          }
+        });
+        watch.observe(document.body, { childList: true, subtree: true, characterData: true });
+      }
+      history.pushState(null, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    } catch (e) {
+      if (watch) watch.disconnect();
+      full();
+      return;
+    }
+    if (canvas || !watch) return;
+    setTimeout(function () {
+      watch.disconnect();
+      if (!changed) full();
+    }, ROUTE_WAIT_MS);
+  }
+
+  /**
+   * THE PAGE, READ — after asking a Flutter app to switch its accessibility
+   * on, when it is off. Only the app can (a script's click does not count):
+   * `avokaido:read-request` on the document is the ask, which the Dart
+   * package answers with the app's `onReadRequest`. It is given a moment;
+   * a page still unreadable then is read as such (`UNREADABLE_FLUTTER`).
+   */
+  var READ_WAIT_MS = 1500;
+
+  function readSoon() {
+    var hands = handsNow();
+    if (flutterState(document) !== "off") return Promise.resolve(hands.read());
+    emit("read-request", { needs: "semantics" });
+    return new Promise(function (done) {
+      var started = Date.now();
+      (function check() {
+        if (flutterState(document) !== "off" || Date.now() - started >= READ_WAIT_MS) {
+          // One frame more: the tree is filled in as it is drawn.
+          setTimeout(function () {
+            done(hands.read());
+          }, 120);
+          return;
+        }
+        setTimeout(check, 100);
+      })();
+    });
   }
 
   /**
@@ -5930,11 +6075,14 @@ function createIdeaWidget(options) {
       postToFrame({ type: "avokaido:page", id: id, error: "off" });
       return;
     }
-    try {
-      postToFrame({ type: "avokaido:page", id: id, page: handsNow().read() });
-    } catch (e) {
-      postToFrame({ type: "avokaido:page", id: id, error: "failed" });
-    }
+    readSoon().then(
+      function (page) {
+        postToFrame({ type: "avokaido:page", id: id, page: page });
+      },
+      function () {
+        postToFrame({ type: "avokaido:page", id: id, error: "failed" });
+      },
+    );
   }
 
   /**
@@ -5966,14 +6114,20 @@ function createIdeaWidget(options) {
       };
       if (result.confirm) message.confirm = result.confirm;
       if (result.data != null) message.data = result.data;
-      if (withPage) {
-        try {
-          message.page = handsNow().read();
-        } catch (e) {
-          /* The step's answer still goes; the chat reads again if it needs. */
-        }
+      if (!withPage) {
+        postToFrame(message);
+        return;
       }
-      postToFrame(message);
+      readSoon().then(
+        function (page) {
+          message.page = page;
+          postToFrame(message);
+        },
+        // The step's answer still goes; the chat reads again if it needs.
+        function () {
+          postToFrame(message);
+        },
+      );
     };
     if (!pageAgent) {
       answer({ ok: false, message: "off", label: "" }, false);
@@ -6014,17 +6168,7 @@ function createIdeaWidget(options) {
    * step's id on the note, so the chat carries on from where it lands.
    */
   function goTo(path, stepId) {
-    var routed = false;
-    try {
-      routed = !document.dispatchEvent(
-        new CustomEvent("avokaido:navigate", { detail: { path: path }, cancelable: true }),
-      );
-    } catch (e) {
-      /* No CustomEvent: the browser goes there, below. */
-    }
-    if (routed) return;
-    leaveReopen(stepId);
-    location.assign(path);
+    routeTo(path, stepId);
   }
 
   /**

@@ -83,4 +83,65 @@ void main() {
     expect(seen[3].reason, IdeaCloseReason.unknown);
     expect(seen[4].reason, IdeaCloseReason.unknown);
   });
+
+  group('help on the page', () {
+    test('a read request calls onReadRequest', () async {
+      var asked = 0;
+      await AvokaidoIdeas.install(
+        key: 'avk_test',
+        scriptUrl: _scriptUrl,
+        onReadRequest: () => asked++,
+      );
+      _fire('avokaido:read-request');
+      expect(asked, 1);
+    });
+
+    test(
+        'onNavigate takes the path, and keeps the widget from loading the page',
+        () async {
+      final paths = <String>[];
+      await AvokaidoIdeas.install(
+        key: 'avk_test',
+        scriptUrl: _scriptUrl,
+        onNavigate: (path) {
+          paths.add(path);
+          return path == '/calendar';
+        },
+      );
+      bool send(String path) {
+        final event = web.CustomEvent(
+          'avokaido:navigate',
+          web.CustomEventInit(
+            detail: <String, Object?>{'path': path}.jsify(),
+            cancelable: true,
+          ),
+        );
+        // dispatchEvent is false when a listener called preventDefault.
+        return !web.document.dispatchEvent(event);
+      }
+
+      expect(send('/calendar'), isTrue);
+      expect(send('/stats'), isFalse,
+          reason: 'returned false: the widget goes there');
+      expect(send('https://evil.example/'), isFalse,
+          reason: 'never handed a non-path');
+      expect(paths, ['/calendar', '/stats']);
+    });
+
+    test('a throwing callback does not stop the page', () async {
+      await AvokaidoIdeas.install(
+        key: 'avk_test',
+        scriptUrl: _scriptUrl,
+        onReadRequest: () => throw StateError('boom'),
+        onNavigate: (_) => throw StateError('boom'),
+      );
+      _fire('avokaido:read-request');
+      final event = web.CustomEvent(
+        'avokaido:navigate',
+        web.CustomEventInit(
+            detail: <String, Object?>{'path': '/x'}.jsify(), cancelable: true),
+      );
+      expect(web.document.dispatchEvent(event), isTrue);
+    });
+  });
 }

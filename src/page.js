@@ -71,6 +71,63 @@ export function settleFor(tool) {
   return 60;
 }
 
+/**
+ * A FLUTTER PAGE THAT CANNOT BE READ. Flutter draws on a canvas; what it puts
+ * in the page for a reader is its accessibility tree, and that tree is only
+ * built once accessibility is switched on — by a person's own key or click,
+ * or by the app (`SemanticsBinding.instance.ensureSemantics()`), never by a
+ * script on the page. Until then the page is one hidden "Enable
+ * accessibility" button, and a reading that says nothing else reads as an
+ * empty page still loading. This line says what it is instead; the server
+ * matches it (`idea_agent.ts`), so change both together.
+ */
+export var UNREADABLE_FLUTTER = "page could not be read: it is drawn on a canvas (Flutter) and its accessibility is off";
+
+/**
+ * `"none"` for a page that is not Flutter's, `"readable"` for one whose
+ * accessibility tree is built, `"off"` for one whose is not.
+ */
+export function flutterState(doc) {
+  if (!doc || typeof doc.querySelector !== "function") return "none";
+  if (!doc.querySelector("flutter-view, flt-glass-pane")) return "none";
+  var host = doc.querySelector("flt-semantics-host");
+  return host && host.querySelector("flt-semantics") ? "readable" : "off";
+}
+
+/**
+ * WHEN AND WHERE THE PERSON IS ASKING: "today at 10" means their today, in
+ * their time zone — `now: Thursday 12 November 2026, 10:02 (Europe/Stockholm,
+ * UTC+01:00)`. The server matches the `now:` prefix.
+ */
+export function nowLine(date, timeZone) {
+  var d = date || new Date();
+  var zone = timeZone;
+  try {
+    zone = zone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch (e) {
+    zone = "";
+  }
+  var day = "";
+  try {
+    var parts = new Intl.DateTimeFormat("en-GB", {
+      weekday: "long", day: "numeric", month: "long", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: zone || undefined,
+    }).formatToParts(d);
+    var get = function (t) {
+      for (var i = 0; i < parts.length; i++) if (parts[i].type === t) return parts[i].value;
+      return "";
+    };
+    day = get("weekday") + " " + get("day") + " " + get("month") + " " + get("year") + ", " + get("hour") + ":" + get("minute");
+  } catch (e) {
+    day = d.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  }
+  var off = -d.getTimezoneOffset();
+  var sign = off >= 0 ? "+" : "-";
+  var abs = Math.abs(off);
+  var utc = "UTC" + sign + String(Math.floor(abs / 60)).padStart(2, "0") + ":" + String(abs % 60).padStart(2, "0");
+  return "now: " + day + " (" + (zone ? zone + ", " : "") + utc + ")";
+}
+
 /** The longest description of a picked part of the page. */
 export var PICK_MAX_CHARS = 2000;
 /** The most alerts a reading lists for the chat's suggestions. */
@@ -874,7 +931,10 @@ export function createPageHands(cfg) {
 
   function read() {
     var body = doc.body || doc.documentElement;
-    var out = outlinePage(body, env);
+    var flutter = flutterState(doc);
+    var out = flutter === "off"
+      ? { text: "", refs: new Map(), prints: new Map(), alerts: [] }
+      : outlinePage(body, env);
     refs = out.refs;
     prints = out.prints;
     var dialog = doc.querySelector && doc.querySelector("dialog[open], [role=dialog][aria-modal=true]");
@@ -885,8 +945,13 @@ export function createPageHands(cfg) {
         Math.max(0, Math.round((doc.documentElement.scrollHeight || 0) - (win.innerHeight || 0))),
     ];
     if (dialog && !isHidden(dialog)) header.push("a dialog is open over the page");
+    header.push(nowLine(new Date()));
+    // Nothing to read, said as what it is: never an empty page that could be
+    // taken for one still loading.
+    if (flutter === "off") header.push(UNREADABLE_FLUTTER);
     return {
-      text: header.join("\n") + "\n\n" + out.text,
+      unreadable: flutter === "off" ? "flutter" : undefined,
+      text: header.join("\n") + (out.text ? "\n\n" + out.text : ""),
       path: squash(win.location.pathname + win.location.hash, 200),
       title: squash(doc.title || "", NAME_MAX),
       refs: refs.size,

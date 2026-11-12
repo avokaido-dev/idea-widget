@@ -5,8 +5,8 @@
 /// behind [platformInstall] and friends are chosen at compile time.
 library;
 
-import 'platform_stub.dart'
-    if (dart.library.js_interop) 'platform_web.dart' as platform;
+import 'platform_stub.dart' if (dart.library.js_interop) 'platform_web.dart'
+    as platform;
 
 /// Where the launcher and the dock sit.
 enum IdeaCorner {
@@ -55,17 +55,17 @@ enum IdeaCloseReason {
   unknown;
 
   static IdeaCloseReason parse(String? raw) => switch (raw) {
-    'button' => IdeaCloseReason.button,
-    'escape' => IdeaCloseReason.escape,
-    'page' => IdeaCloseReason.page,
-    'submitted' => IdeaCloseReason.submitted,
-    'api' => IdeaCloseReason.api,
-    // Deliberately not an error. The widget is loaded at runtime from a URL we
-    // do not version-lock, so it can start reporting a reason this build has
-    // never heard of — and dropping the whole event would be worse than
-    // reporting it as unknown.
-    _ => IdeaCloseReason.unknown,
-  };
+        'button' => IdeaCloseReason.button,
+        'escape' => IdeaCloseReason.escape,
+        'page' => IdeaCloseReason.page,
+        'submitted' => IdeaCloseReason.submitted,
+        'api' => IdeaCloseReason.api,
+        // Deliberately not an error. The widget is loaded at runtime from a URL we
+        // do not version-lock, so it can start reporting a reason this build has
+        // never heard of — and dropping the whole event would be worse than
+        // reporting it as unknown.
+        _ => IdeaCloseReason.unknown,
+      };
 }
 
 enum IdeaEventType { ready, submitted, closed }
@@ -80,8 +80,9 @@ class IdeaEvent {
   final IdeaCloseReason? reason;
 
   @override
-  String toString() =>
-      reason == null ? 'IdeaEvent(${type.name})' : 'IdeaEvent(${type.name}, ${reason!.name})';
+  String toString() => reason == null
+      ? 'IdeaEvent(${type.name})'
+      : 'IdeaEvent(${type.name}, ${reason!.name})';
 }
 
 /// The idea widget.
@@ -106,6 +107,31 @@ abstract final class AvokaidoIdeas {
   /// [origin] defaults to null and lets the script work it out from its own
   /// URL — set it only if you serve the script from somewhere that does not
   /// host the interview, such as a third-party CDN.
+  ///
+  /// HELP ON THE PAGE, IN A FLUTTER APP. The box can read the screen and do
+  /// steps on it for the person who asks — but Flutter draws on a canvas, and
+  /// what a reader sees is its accessibility tree, which only the app can
+  /// switch on. Two callbacks make the box work in yours:
+  ///
+  /// ```dart
+  /// await AvokaidoIdeas.install(
+  ///   key: 'avk_…',
+  ///   // The box wants to read the page: switch accessibility on.
+  ///   onReadRequest: () => _semantics ??= SemanticsBinding.instance.ensureSemantics(),
+  ///   // The box takes the person to a screen: your router, not a reload.
+  ///   onNavigate: (path) {
+  ///     router.go(path);
+  ///     return true;
+  ///   },
+  /// );
+  /// ```
+  ///
+  /// [onReadRequest] runs when the box is about to read a page whose
+  /// accessibility is off; keep the handle `ensureSemantics()` returns for as
+  /// long as you want it on. [onNavigate] gets a plain path in your app
+  /// ("/calendar"); return true when you took it there, false to let the
+  /// widget do it (in place where it can, else a page load). Without either,
+  /// the box says it cannot see the screen, and goes to pages by loading them.
   static Future<void> install({
     required String key,
     String? scriptUrl,
@@ -114,6 +140,8 @@ abstract final class AvokaidoIdeas {
     IdeaLauncher launcher = IdeaLauncher.floating,
     IdeaCorner position = IdeaCorner.bottomRight,
     String? context,
+    void Function()? onReadRequest,
+    bool Function(String path)? onNavigate,
   }) {
     if (key.trim().isEmpty) {
       throw ArgumentError.value(key, 'key', 'must not be empty');
@@ -126,6 +154,8 @@ abstract final class AvokaidoIdeas {
       launcher: launcher.value,
       position: position.value,
       context: context,
+      onReadRequest: onReadRequest,
+      onNavigate: onNavigate,
     );
   }
 

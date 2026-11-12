@@ -1,3 +1,19 @@
+## 1.2.0
+
+Help on the page, in a Flutter app. The box can read the screen and do steps
+for the person who asks — but Flutter draws on a canvas, and only the app can
+switch on the accessibility tree a reader sees. `install` takes two callbacks:
+
+- `onReadRequest` — the box is about to read a page whose accessibility is
+  off (`avokaido:read-request`, widget 1.25): call
+  `SemanticsBinding.instance.ensureSemantics()` and keep the handle.
+- `onNavigate(path)` — the box takes the person to a screen
+  (`avokaido:navigate`): route there with your router and return true, so the
+  app is not loaded again.
+
+Additive: without them the box says it cannot see the screen, and goes to
+pages by loading them.
+
 ## 1.1.0
 
 `AvokaidoIdeas.setContext` — tells the widget where in your app the person is,
