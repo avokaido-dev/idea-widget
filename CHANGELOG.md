@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.25.0
+
+**Flutter apps.** Flutter draws on a canvas; a reader sees its accessibility
+tree, which only the app — or a person's own key — can switch on. Before the
+box reads a Flutter page whose tree is off, `avokaido:read-request` fires on
+the document (the Dart package's `onReadRequest`, 1.2.0, calls
+`ensureSemantics()`), and the page is read once the tree is there, within a
+second and a half. A page still unreadable is read as exactly that:
+`page could not be read: it is drawn on a canvas (Flutter) and its
+accessibility is off` — never an empty page that reads as still loading.
+With the tree on, steps press Flutter's own controls.
+
+**Going to a page stays in the app.** After the app's own router
+(`avokaido:navigate`, now also the Dart package's `onNavigate`), a page is
+reached in place: a hash-routed app by its hash, any other by the history API
+and `popstate`, which every single-page router follows. Only when nothing on
+the page changed does the browser load it.
+
+**Now.** Every reading carries the person's local day, time and time zone —
+`now: Thursday 12 November 2026, 10:02 (Europe/Stockholm, UTC+01:00)` — so
+"today at 10" means their today.
+
 ## Unreleased
 
 - The box opens in its corner by the launcher every time, even after it was

@@ -18,7 +18,8 @@ import 'idea_widget.dart' show IdeaCloseReason, IdeaEvent, IdeaEventType;
 const String _tagId = 'avokaido-idea-widget';
 
 Completer<void>? _loading;
-final StreamController<IdeaEvent> _events = StreamController<IdeaEvent>.broadcast();
+final StreamController<IdeaEvent> _events =
+    StreamController<IdeaEvent>.broadcast();
 bool _listening = false;
 
 bool get isInstalled => _loading?.isCompleted ?? false;
@@ -38,7 +39,10 @@ Future<void> install({
   required String launcher,
   required String position,
   String? context,
+  void Function()? onReadRequest,
+  bool Function(String path)? onNavigate,
 }) {
+  _listenForPageHelp(onReadRequest, onNavigate);
   final existing = _loading;
   if (existing != null) return existing.future;
 
@@ -92,6 +96,54 @@ Future<void> install({
   return done.future;
 }
 
+void Function()? _onReadRequest;
+bool Function(String path)? _onNavigate;
+bool _helping = false;
+
+/// The box asking the app for help on the page: to switch accessibility on
+/// before it reads (`avokaido:read-request`), and to route to a path itself
+/// (`avokaido:navigate`, cancelable — taken with `preventDefault()`). Wired
+/// once; a second [install] replaces the callbacks.
+void _listenForPageHelp(
+  void Function()? onReadRequest,
+  bool Function(String path)? onNavigate,
+) {
+  _onReadRequest = onReadRequest;
+  _onNavigate = onNavigate;
+  if (_helping) return;
+  _helping = true;
+  web.document.addEventListener(
+    'avokaido:read-request',
+    ((web.Event _) {
+      final ask = _onReadRequest;
+      if (ask == null) return;
+      try {
+        ask();
+      } catch (_) {
+        // The app's own callback failing must not take the page with it: the
+        // box then reads the page as it is, and says it cannot see it.
+      }
+    }).toJS,
+  );
+  web.document.addEventListener(
+    'avokaido:navigate',
+    ((web.Event event) {
+      final go = _onNavigate;
+      if (go == null || !event.isA<web.CustomEvent>()) return;
+      final detail = (event as web.CustomEvent).detail?.dartify();
+      final path = detail is Map ? detail['path'] : null;
+      if (path is! String || !path.startsWith('/')) return;
+      var taken = false;
+      try {
+        taken = go(path);
+      } catch (_) {
+        taken = false;
+      }
+      if (taken) event.preventDefault();
+    }).toJS,
+  );
+}
+
 void _listenForDomEvents() {
   if (_listening) return;
   _listening = true;
@@ -105,21 +157,24 @@ void _listenForDomEvents() {
     'avokaido:submitted',
     ((web.Event _) => _emit(const IdeaEvent(IdeaEventType.submitted))).toJS,
   );
-  web.document.addEventListener('avokaido:closed', ((web.Event event) {
-    String? reason;
-    if (event.isA<web.CustomEvent>()) {
-      final detail = (event as web.CustomEvent).detail;
-      if (detail != null) {
-        final value = detail.dartify();
-        if (value is Map && value['reason'] is String) {
-          reason = value['reason'] as String;
+  web.document.addEventListener(
+      'avokaido:closed',
+      ((web.Event event) {
+        String? reason;
+        if (event.isA<web.CustomEvent>()) {
+          final detail = (event as web.CustomEvent).detail;
+          if (detail != null) {
+            final value = detail.dartify();
+            if (value is Map && value['reason'] is String) {
+              reason = value['reason'] as String;
+            }
+          }
         }
-      }
-    }
-    _emit(
-      IdeaEvent(IdeaEventType.closed, reason: IdeaCloseReason.parse(reason)),
-    );
-  }).toJS);
+        _emit(
+          IdeaEvent(IdeaEventType.closed,
+              reason: IdeaCloseReason.parse(reason)),
+        );
+      }).toJS);
 }
 
 void _emit(IdeaEvent event) {

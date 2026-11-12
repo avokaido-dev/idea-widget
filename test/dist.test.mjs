@@ -1372,7 +1372,7 @@ describe("a button under an answer, taking the page there", () => {
 
   it("tells the chat it went, and lets the app route it itself", () => {
     assert.match(core, /postToFrame\(\{ type: "avokaido:navigated", id: id \}\)/);
-    assert.match(core, /new CustomEvent\("avokaido:navigate", \{\s+detail: \{ path: path \},\s+cancelable: true,/);
+    assert.match(core, /new CustomEvent\("avokaido:navigate", \{ detail: \{ path: path \}, cancelable: true \}\)/);
   });
 
   it("opens the box again only within a minute of going", () => {

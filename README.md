@@ -744,6 +744,15 @@ the chat as JSON, emails and phone numbers replaced, cut at 4,000 characters,
 and is used for the answer and not kept. Return only what the person may see
 — `get` runs in their session, so your own checks apply.
 
+**In a Flutter app**, the box can only read what Flutter's accessibility tree
+shows, and only the app can switch that on. Before it reads, the widget fires
+`avokaido:read-request` on the document; answer it with
+`SemanticsBinding.instance.ensureSemantics()` — the Dart package does, given
+`onReadRequest`. Without it, the box says it cannot see the screen. Going to a
+page asks your router first (`avokaido:navigate`, cancelable; the Dart
+package's `onNavigate`), then routes in place with the history API, and loads
+the page only when nothing changed.
+
 `pageAgent: false` (`data-page-agent="off"`) turns all of it off for a page:
 the box then answers from your app's guide and code only. See [What it
 sends](#what-it-sends) for what leaves the page.

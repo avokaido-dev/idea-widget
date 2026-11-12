@@ -27,7 +27,7 @@
 
 import { launcherFont, matchTheme, systemTheme, themeOption, withSystem } from "./theme.js";
 import { copyPage, scrubText } from "./copy.js";
-import { createPageHands, isPlainPath, settleFor, squash } from "./page.js";
+import { createPageHands, flutterState, isPlainPath, settleFor, squash } from "./page.js";
 
 /** Corners the launcher and the dock may sit in. */
 export const CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"];
@@ -3389,20 +3389,100 @@ export function createIdeaWidget(options) {
     var id = data && typeof data.id === "number" ? data.id : 0;
     if (!isPlainPath(path)) return;
     postToFrame({ type: "avokaido:navigated", id: id });
+    routeTo(path, null);
+  }
+
+  /**
+   * TAKES THE PAGE TO [path] WITHOUT LOADING IT AGAIN, WHEREVER IT CAN. A full
+   * load throws away what the person has open, and a single-page app — every
+   * Flutter app, most React and Vue ones — starts again from nothing, which
+   * reads as the site crashing. In order:
+   *
+   *   1. The app's own router: a cancelable `avokaido:navigate` on the page,
+   *      which an app that routes itself takes with `preventDefault()` (the
+   *      Dart package's `onNavigate`).
+   *   2. In place. A hash-routed app (`/#/calendar`) by its hash; any other by
+   *      the history API, then `popstate`, which every single-page router
+   *      follows for the back button. Then it is checked: when nothing on the
+   *      page changed within the moment a router takes, the app did not
+   *      follow, and the browser goes there after all. A Flutter page whose
+   *      accessibility is off changes nothing a script can see, so for one it
+   *      is taken as followed.
+   *   3. A full load, with the note that opens the box again on the page it
+   *      lands on ([REOPEN_KEY]), carrying [stepId] for a step.
+   */
+  var ROUTE_WAIT_MS = 800;
+
+  function routeTo(path, stepId) {
     var routed = false;
     try {
       routed = !document.dispatchEvent(
-        new CustomEvent("avokaido:navigate", {
-          detail: { path: path },
-          cancelable: true,
-        })
+        new CustomEvent("avokaido:navigate", { detail: { path: path }, cancelable: true }),
       );
     } catch (e) {
-      /* No CustomEvent: the browser goes there, below. */
+      /* No CustomEvent: in place, below. */
     }
     if (routed) return;
-    leaveReopen(null);
-    location.assign(path);
+    var full = function () {
+      leaveReopen(stepId);
+      location.assign(path);
+    };
+    if (/^#\//.test(location.hash)) {
+      location.hash = "#" + path;
+      return;
+    }
+    var canvas = flutterState(document) === "off";
+    var changed = false;
+    var watch = null;
+    try {
+      if (!canvas && typeof MutationObserver !== "undefined") {
+        watch = new MutationObserver(function (records) {
+          for (var i = 0; i < records.length; i++) {
+            if (!host || !host.contains(records[i].target)) changed = true;
+          }
+        });
+        watch.observe(document.body, { childList: true, subtree: true, characterData: true });
+      }
+      history.pushState(null, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    } catch (e) {
+      if (watch) watch.disconnect();
+      full();
+      return;
+    }
+    if (canvas || !watch) return;
+    setTimeout(function () {
+      watch.disconnect();
+      if (!changed) full();
+    }, ROUTE_WAIT_MS);
+  }
+
+  /**
+   * THE PAGE, READ — after asking a Flutter app to switch its accessibility
+   * on, when it is off. Only the app can (a script's click does not count):
+   * `avokaido:read-request` on the document is the ask, which the Dart
+   * package answers with the app's `onReadRequest`. It is given a moment;
+   * a page still unreadable then is read as such (`UNREADABLE_FLUTTER`).
+   */
+  var READ_WAIT_MS = 1500;
+
+  function readSoon() {
+    var hands = handsNow();
+    if (flutterState(document) !== "off") return Promise.resolve(hands.read());
+    emit("read-request", { needs: "semantics" });
+    return new Promise(function (done) {
+      var started = Date.now();
+      (function check() {
+        if (flutterState(document) !== "off" || Date.now() - started >= READ_WAIT_MS) {
+          // One frame more: the tree is filled in as it is drawn.
+          setTimeout(function () {
+            done(hands.read());
+          }, 120);
+          return;
+        }
+        setTimeout(check, 100);
+      })();
+    });
   }
 
   /**
@@ -3540,11 +3620,14 @@ export function createIdeaWidget(options) {
       postToFrame({ type: "avokaido:page", id: id, error: "off" });
       return;
     }
-    try {
-      postToFrame({ type: "avokaido:page", id: id, page: handsNow().read() });
-    } catch (e) {
-      postToFrame({ type: "avokaido:page", id: id, error: "failed" });
-    }
+    readSoon().then(
+      function (page) {
+        postToFrame({ type: "avokaido:page", id: id, page: page });
+      },
+      function () {
+        postToFrame({ type: "avokaido:page", id: id, error: "failed" });
+      },
+    );
   }
 
   /**
@@ -3576,14 +3659,20 @@ export function createIdeaWidget(options) {
       };
       if (result.confirm) message.confirm = result.confirm;
       if (result.data != null) message.data = result.data;
-      if (withPage) {
-        try {
-          message.page = handsNow().read();
-        } catch (e) {
-          /* The step's answer still goes; the chat reads again if it needs. */
-        }
+      if (!withPage) {
+        postToFrame(message);
+        return;
       }
-      postToFrame(message);
+      readSoon().then(
+        function (page) {
+          message.page = page;
+          postToFrame(message);
+        },
+        // The step's answer still goes; the chat reads again if it needs.
+        function () {
+          postToFrame(message);
+        },
+      );
     };
     if (!pageAgent) {
       answer({ ok: false, message: "off", label: "" }, false);
@@ -3624,17 +3713,7 @@ export function createIdeaWidget(options) {
    * step's id on the note, so the chat carries on from where it lands.
    */
   function goTo(path, stepId) {
-    var routed = false;
-    try {
-      routed = !document.dispatchEvent(
-        new CustomEvent("avokaido:navigate", { detail: { path: path }, cancelable: true }),
-      );
-    } catch (e) {
-      /* No CustomEvent: the browser goes there, below. */
-    }
-    if (routed) return;
-    leaveReopen(stepId);
-    location.assign(path);
+    routeTo(path, stepId);
   }
 
   /**

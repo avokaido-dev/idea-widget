@@ -20,6 +20,9 @@ import {
   refusalFor,
   roleOf,
   pickContext,
+  UNREADABLE_FLUTTER,
+  flutterState,
+  nowLine,
   refind,
   setFieldValue,
   settleFor,
@@ -307,7 +310,7 @@ describe("a step, done on the page", () => {
   it("reads with a header saying where, then the outline", () => {
     const { api } = hands(destinations());
     const page = api.read();
-    assert.match(page.text, /^page "Destinations" at \/destinations\nwindow 1200×800, scrolled 0 of 1200\n\nnavigation/);
+    assert.match(page.text, /^page "Destinations" at \/destinations\nwindow 1200×800, scrolled 0 of 1200\nnow: \w+day \d+ \w+ \d{4}, \d\d:\d\d \([^)]*UTC[+-]\d\d:\d\d\)\n\nnavigation/);
     assert.equal(page.path, "/destinations");
     assert.equal(page.refs, 8);
   });
@@ -622,5 +625,80 @@ describe("seen to happen, out of the way", () => {
     assert.match(core, /\(shows \? glide\(target\) : Promise\.resolve\(\)\)/);
     assert.match(core, /setTimeout\(done, still \? 0 : 260\);/);
     assert.match(core, /\.agent-cursor \{ position: fixed;[^"]*pointer-events: none;/);
+  });
+});
+
+// ─── Flutter, time, and staying on the page ─────────────────────────────────
+
+describe("a Flutter page", () => {
+  const doc = (nodes) => ({
+    querySelector(sel) {
+      if (sel === "flutter-view, flt-glass-pane") return nodes.view ? {} : null;
+      if (sel === "flt-semantics-host") return nodes.host ? { querySelector: () => (nodes.tree ? {} : null) } : null;
+      return null;
+    },
+  });
+
+  it("is told apart: not Flutter, Flutter readable, Flutter with accessibility off", () => {
+    assert.equal(flutterState(doc({})), "none");
+    assert.equal(flutterState(doc({ view: true })), "off");
+    assert.equal(flutterState(doc({ view: true, host: true })), "off");
+    assert.equal(flutterState(doc({ view: true, host: true, tree: true })), "readable");
+    assert.equal(flutterState(null), "none");
+  });
+
+  it("that cannot be read says so, in the line the server matches, with no outline", () => {
+    const body = h("body", {}, [h("flutter-view"), h("flt-semantics-placeholder", { role: "button", "aria-label": "Enable accessibility" })]);
+    const docu = {
+      body,
+      documentElement: { clientHeight: 800, clientWidth: 1200, scrollHeight: 800 },
+      title: "Swim Suite",
+      getElementById: () => null,
+      querySelector: (sel) => (sel === "flutter-view, flt-glass-pane" ? {} : null),
+    };
+    const win = {
+      location: { origin: "https://swim.test", href: "https://swim.test/groups", pathname: "/groups", hash: "" },
+      innerWidth: 1200, innerHeight: 800, scrollY: 0,
+      getComputedStyle: () => ({ display: "block", visibility: "visible" }),
+    };
+    const page = createPageHands({ document: docu, window: win, host: null, draw() {}, navigate() {}, act() {}, ask: () => true }).read();
+    assert.equal(page.unreadable, "flutter");
+    assert.equal(page.refs, 0);
+    assert.ok(page.text.endsWith("\n" + UNREADABLE_FLUTTER));
+    assert.equal(page.text.includes("Enable accessibility"), false);
+    assert.equal(UNREADABLE_FLUTTER, "page could not be read: it is drawn on a canvas (Flutter) and its accessibility is off");
+  });
+
+  it("is asked to switch accessibility on before it is read, and given a moment", () => {
+    assert.match(core, /if \(flutterState\(document\) !== "off"\) return Promise\.resolve\(hands\.read\(\)\);\n\s+emit\("read-request", \{ needs: "semantics" \}\);/);
+    assert.match(core, /var READ_WAIT_MS = 1500;/);
+  });
+});
+
+describe("now", () => {
+  it("is the person's own day and time, with their zone", () => {
+    const at = new Date("2026-11-12T09:02:00Z");
+    assert.match(nowLine(at, "Europe/Stockholm"), /^now: Thursday 12 November 2026, 10:02 \(Europe\/Stockholm, UTC[+-]\d\d:\d\d\)$/);
+    assert.match(nowLine(at, "UTC"), /^now: Thursday 12 November 2026, 09:02 \(UTC, UTC/);
+  });
+});
+
+describe("going to a page", () => {
+  it("asks the app's router first, then routes in place, and loads only when the app did not follow", () => {
+    const route = core.slice(core.indexOf("function routeTo(path, stepId)"));
+    const order = ['"avokaido:navigate"', "location.hash = \"#\" + path", "history.pushState(null, \"\", path)", 'new PopStateEvent("popstate"', "if (!changed) full();"];
+    let at = 0;
+    for (const needle of order) {
+      const i = route.indexOf(needle, at);
+      assert.ok(i > at - 1, `${needle} in order`);
+      at = i;
+    }
+    assert.match(core, /function goTo\(path, stepId\) \{\n\s+routeTo\(path, stepId\);/);
+    assert.match(core, /postToFrame\(\{ type: "avokaido:navigated", id: id \}\);\n\s+routeTo\(path, null\);/);
+  });
+
+  it("trusts a Flutter canvas to have followed, since nothing on it can be seen to change", () => {
+    assert.match(core, /var canvas = flutterState\(document\) === "off";/);
+    assert.match(core, /if \(canvas \|\| !watch\) return;/);
   });
 });

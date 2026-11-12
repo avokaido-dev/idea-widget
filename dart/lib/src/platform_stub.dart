@@ -10,10 +10,10 @@ library;
 import 'idea_widget.dart' show IdeaEvent;
 
 Never _unsupported() => throw UnsupportedError(
-  'avokaido_idea_widget is web only — the widget is an iframe around a hosted '
-  'web page, so there is nothing to show on this platform. Guard the call with '
-  'kIsWeb, or use a conditional import.',
-);
+      'avokaido_idea_widget is web only — the widget is an iframe around a hosted '
+      'web page, so there is nothing to show on this platform. Guard the call with '
+      'kIsWeb, or use a conditional import.',
+    );
 
 Future<void> install({
   required String key,
@@ -23,7 +23,10 @@ Future<void> install({
   required String launcher,
   required String position,
   String? context,
-}) async => _unsupported();
+  void Function()? onReadRequest,
+  bool Function(String path)? onNavigate,
+}) async =>
+    _unsupported();
 
 /// Does nothing off the web, rather than throwing.
 ///
