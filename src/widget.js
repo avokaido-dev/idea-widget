@@ -2333,9 +2333,7 @@ export function createIdeaWidget(options) {
     // pressing Cancel produces — unless the embedding page says otherwise
     // here. It grants nothing on its own: the browser still draws its own
     // picker and the person still chooses what, if anything, to share.
-    // The microphone is for the chat's Hands-free switch: the browser still
-    // asks the person before the box hears anything.
-    frame.allow = "clipboard-read; clipboard-write; display-capture; microphone";
+    frame.allow = "clipboard-read; clipboard-write; display-capture";
 
     var grip = document.createElement("div");
     grip.className = "grip";
