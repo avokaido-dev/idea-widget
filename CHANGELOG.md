@@ -24,6 +24,10 @@ the page changed does the browser load it.
 
 ## Unreleased
 
+- The box's frame asks for the microphone (`allow="… microphone"`), so the
+  chat's Hands-free switch can listen. The browser still asks the person
+  first; before, it refused at once without asking, because the box is on
+  another origin than the page it sits on.
 - The box opens in its corner by the launcher every time, even after it was
   dragged earlier in the session. Only the place is reset: the conversation
   and the size the person chose are kept.

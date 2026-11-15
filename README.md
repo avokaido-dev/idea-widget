@@ -836,6 +836,19 @@ rather than `display` or `visibility`: both of those stop the frame rendering,
 which throttles its animation frames and, with `display`, tears down layout —
 either can stall the very capture it is meant to help.
 
+## Hands-free, and the microphone
+
+The chat has a Hands-free switch: the person speaks, and replies are read out
+loud, using only the browser's own speech recognition and speech synthesis. The
+widget grants the frame `microphone`, which Permissions Policy also hands to
+`self` only. The browser still asks the person before anything is heard. If
+your site sends a `Permissions-Policy` header that restricts `microphone`, the
+switch says it could not listen. To allow it:
+
+```
+Permissions-Policy: microphone=(self "https://app-avokaido-eu.web.app")
+```
+
 ## What this does not include
 
 The interview is a hosted, multi-tenant service. It holds the prompt, the model

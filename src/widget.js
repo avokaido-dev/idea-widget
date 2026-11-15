@@ -2333,7 +2333,15 @@ export function createIdeaWidget(options) {
     // pressing Cancel produces — unless the embedding page says otherwise
     // here. It grants nothing on its own: the browser still draws its own
     // picker and the person still chooses what, if anything, to share.
-    frame.allow = "clipboard-read; clipboard-write; display-capture";
+    //
+    // MICROPHONE, FOR HANDS-FREE. The box's Hands-free switch listens through
+    // the browser's own speech recognition, and the microphone, like
+    // display-capture, is handed to `self` only. Without it here the browser
+    // refuses at once, with no prompt at all, and the switch can only say it
+    // could not listen. With it the browser still asks the person first, and
+    // nothing is heard until they say yes. A page whose own Permissions-Policy
+    // header keeps the microphone from every frame still wins.
+    frame.allow = "clipboard-read; clipboard-write; display-capture; microphone";
 
     var grip = document.createElement("div");
     grip.className = "grip";

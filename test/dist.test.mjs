@@ -80,7 +80,14 @@ describe("the frame", () => {
     // Permissions Policy hands display-capture to `self` only, so without this
     // the screenshot button rejects instantly — with the same error a human
     // pressing Cancel produces.
-    assert.match(dist, /allow = "clipboard-read; clipboard-write; display-capture"/);
+    assert.match(dist, /allow = "[^"]*\bdisplay-capture\b[^"]*"/);
+  });
+
+  it("asks for the microphone, which hands-free cannot listen without", () => {
+    // Handed to `self` only as well: the box is on another origin than the
+    // page it is embedded in, so without this the browser refuses speech
+    // recognition at once and never asks the person.
+    assert.match(dist, /allow = "clipboard-read; clipboard-write; display-capture; microphone"/);
   });
 
   it("is NOT sandboxed", () => {
