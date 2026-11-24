@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.26.0
+
+**The chat introduces itself.** The first time somebody sees the button, the
+avocado wakes up and a short, animated intro shows what the chat is for: a
+message typing itself ("this is the chat"), a cursor finding a button ("point,
+ask, find"), and — when the page has a get-started tour to offer
+(`window.avokaido.tour`, from Avokaido's onboarding module) — "want a guided
+tour?", whose yes starts that tour. Swedish or English from `<html lang>`,
+coloured with the site's own theme, still for anybody who asked for less
+motion, and full width on a phone. Shown once per browser and once per
+identified person (`avokaido.ideas.intro`). On by default; a team turns it
+off in Chat options, which reaches the widget as `intro: false` on the
+audience answer. The page hears `avokaido:intro` on the window
+(`{state: "start" | "done" | "skipped", tour}`), and
+`window.avokaido.replayIntro()` shows it again.
+
 ## 1.25.0
 
 **Flutter apps.** Flutter draws on a canvas; a reader sees its accessibility

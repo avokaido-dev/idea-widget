@@ -172,6 +172,8 @@ if (script) {
     // For a page with its own menu item: whether to show it. See also the
     // `avokaido:visibility` event, which says the same thing when it changes.
     window.avokaido.isShown = widget.isShown;
+    // The chat's short intro, again — for the app's Help menu (intro.js).
+    window.avokaido.replayIntro = widget.replayIntro;
 
     // WHAT THE BOX MAY RUN IN THIS APP — functions, so there is no attribute
     // for it, only code (see readActions in widget.js):

@@ -35,6 +35,9 @@ const copy = readFileSync(join(root, "src/copy.js"), "utf8").replace(/^export /g
 // steps through them.
 const page = readFileSync(join(root, "src/page.js"), "utf8").replace(/^export /gm, "");
 
+// The chat's intro next: the widget shows it when the button first appears.
+const intro = readFileSync(join(root, "src/intro.js"), "utf8").replace(/^export /gm, "");
+
 const widget = readFileSync(join(root, "src/widget.js"), "utf8")
   // `export const` / `export function` -> plain declarations.
   .replace(/^export /gm, "")
@@ -49,7 +52,7 @@ const banner = `/**
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
  *
- * GENERATED FILE — edit src/theme.js, src/copy.js, src/page.js, src/widget.js or src/script-tag.js and run
+ * GENERATED FILE — edit src/theme.js, src/copy.js, src/page.js, src/intro.js, src/widget.js or src/script-tag.js and run
  * \`npm run build\`. Source, licence and docs: ${pkg.repository.url}
  *
  * VERSIONED IN THE PATH. You paste this once and never touch it again, so
@@ -66,6 +69,8 @@ ${theme}
 ${copy}
 
 ${page}
+
+${intro}
 
 ${widget}
 

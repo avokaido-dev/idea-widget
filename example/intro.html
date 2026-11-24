@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Idea widget — the chat's intro</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Nunito:wght@400;600;700;800&display=swap">
+<style>
+  :root { --bg: #f6f4ef; --surface: #fbfaf7; --text: #1d1d1b; --muted: #5c5c56; --border: #e4dfd3;
+          --primary: #2a7a6f }
+  * { box-sizing: border-box }
+  body { margin: 0; font: 17px/1.5 Nunito, system-ui, sans-serif; color: var(--text); background: var(--bg) }
+  .app { display: flex; min-height: 100vh }
+  aside { width: 260px; flex-shrink: 0; padding: 30px 16px; border-right: 1px solid var(--border);
+          background: var(--surface); display: flex; flex-direction: column; gap: 4px }
+  aside .brand { font: 700 22px Lora, Georgia, serif; padding: 0 12px 22px }
+  aside a { padding: 12px 16px; border-radius: 999px; color: inherit; text-decoration: none }
+  aside a.on { background: #efebe1; font-weight: 700 }
+  main { flex: 1; min-width: 0; padding: 28px 64px; display: flex; flex-direction: column; gap: 18px }
+  .top { display: flex; justify-content: flex-end; gap: 10px }
+  .top button { font: inherit; font-weight: 700; padding: 10px 18px; border-radius: 999px;
+                border: 2px solid var(--border); background: var(--surface); cursor: pointer }
+  h1 { font: 700 44px Lora, Georgia, serif; margin: 0 }
+  .sub { color: var(--muted); margin: 0; font-size: 19px }
+  .card { border: 1px solid var(--border); background: var(--surface); border-radius: 22px; padding: 26px 30px }
+  .card h2 { font: 600 24px Lora, Georgia, serif; margin: 0 0 12px }
+  .row { display: flex; align-items: center; gap: 14px; padding: 6px 0 }
+  .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border) }
+  .dot.ok { background: var(--primary); border-color: var(--primary) }
+  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px }
+  .tiles .card h3 { font: 700 22px Lora, Georgia, serif; margin: 0 0 4px }
+  .tiles .card p { margin: 0; color: var(--muted) }
+  .note { font-size: 14px; color: var(--muted) }
+  /* A stand-in for the onboarding module's tour, so "Ja, visa runt" has somewhere to go. */
+  .tour { position: fixed; inset: 0; background: rgba(10,16,13,.5); display: none;
+          align-items: center; justify-content: center; z-index: 10 }
+  .tour.on { display: flex }
+  .tour .box { background: #fff; border-radius: 22px; padding: 28px 30px; width: min(420px, 92vw) }
+  .tour .box small { color: var(--muted) }
+  .tour .box h2 { font: 700 26px Lora, Georgia, serif; margin: 6px 0 }
+  .tour .box .act { display: flex; justify-content: space-between; align-items: center; margin-top: 18px }
+  .tour .box button { font: inherit; font-weight: 800; border: 0; border-radius: 999px; padding: 12px 22px;
+                      background: var(--primary); color: #fff; cursor: pointer }
+  .tour .box .skip { background: none; color: var(--muted); text-decoration: underline; padding: 0 }
+  @media (max-width: 720px) {
+    aside { display: none }
+    main { padding: 20px }
+    .tiles { grid-template-columns: 1fr }
+    h1 { font-size: 32px }
+  }
+</style>
+<script>
+  // THIS PAGE STANDS IN FOR THE SERVER: the audience answer the widget asks
+  // for before drawing its button, with the team's intro switch from the URL
+  // (`?intro=off`). `?fresh` forgets that the intro was seen.
+  (function () {
+    var q = new URLSearchParams(location.search);
+    if (q.has("fresh")) {
+      Object.keys(localStorage).forEach(function (k) {
+        if (k.indexOf("avokaido.ideas.intro") === 0) localStorage.removeItem(k);
+      });
+    }
+    var real = window.fetch.bind(window);
+    window.fetch = function (url, init) {
+      if (String(url).indexOf("/api/idea/audience/") >= 0) {
+        var body = { show: true, paths: [], visitor: false, v: 2, ask: false, anyOf: [], noneOf: [], look: "site" };
+        if (q.get("intro") === "off") body.intro = false;
+        return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      if (String(url).indexOf("/api/idea/look/") >= 0) return Promise.resolve(new Response("{}"));
+      return real(url, init);
+    };
+  })();
+</script>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand">Familjeplaneraren</div>
+    <a class="on" href="#">Hem</a><a href="#">Veckan</a><a href="#">Kalender</a><a href="#">Saker att tänka på</a>
+    <a href="#">Lägg till</a><a href="#">Meddelanden</a><a href="#">Familjen</a><a href="#">Inställningar</a>
+  </aside>
+  <main>
+    <div class="top">
+      <button type="button" id="replay">Visa chatten igen</button>
+      <button type="button" id="reset">Börja om som ny</button>
+    </div>
+    <h1>Familjeplaneraren</h1>
+    <p class="sub">Barnens scheman på ett ställe. Vart vill du gå?</p>
+    <div class="card">
+      <h2>Kom igång</h2>
+      <div class="row"><span class="dot ok"></span><s>Skapa er familj</s></div>
+      <div class="row"><span class="dot"></span>Lägg till ditt första barn</div>
+      <div class="row"><span class="dot"></span>Lägg till ert första schema</div>
+      <div class="row"><span class="dot"></span>Bjud in din partner</div>
+    </div>
+    <div class="tiles">
+      <div class="card"><h3>Veckan</h3><p>Alla barnens aktiviteter i en vecka.</p></div>
+      <div class="card"><h3>Kalender</h3><p>Dag, vecka eller månad.</p></div>
+      <div class="card"><h3>Saker att tänka på</h3><p>Packning och krockar.</p></div>
+    </div>
+    <p class="note">Demo: <code>?fresh</code> as a new visitor · <code>?intro=off</code> as a team that turned it off ·
+      <code>?notour</code> on a site without a tour. Events: <span id="log">–</span></p>
+  </main>
+</div>
+
+<div class="tour" id="tour" role="dialog" aria-label="Guidad tur">
+  <div class="box">
+    <small>Steg 1 av 11</small>
+    <h2>Välkommen!</h2>
+    <p>Här samlas barnens scheman i en gemensam vecka. Vi visar snabbt var allt finns.</p>
+    <div class="act"><button type="button" class="skip" id="tourSkip">Hoppa över</button><button type="button" id="tourNext">Nästa</button></div>
+  </div>
+</div>
+
+<script>
+  // THE ONBOARDING MODULE'S SIDE, in miniature (chat_intro.ts): offer the
+  // tour to the button, and start it only when the intro says so.
+  var tourEl = document.getElementById("tour");
+  function startTour() { tourEl.classList.add("on"); }
+  document.getElementById("tourSkip").onclick = document.getElementById("tourNext").onclick = function () {
+    tourEl.classList.remove("on");
+  };
+  if (!new URLSearchParams(location.search).has("notour")) {
+    window.avokaido = window.avokaido || {};
+    window.avokaido.tour = { start: startTour };
+    window.dispatchEvent(new CustomEvent("avokaido:tour-ready"));
+  }
+  var log = document.getElementById("log");
+  window.addEventListener("avokaido:intro", function (e) {
+    log.textContent = (log.textContent === "–" ? "" : log.textContent + " → ") + JSON.stringify(e.detail);
+    // Intro off or already seen: the tour starts by itself, as it always did.
+    if (e.detail.state === "skipped" && window.avokaido.tour && !sessionStorage.getItem("demo.tour")) {
+      sessionStorage.setItem("demo.tour", "1");
+      setTimeout(startTour, 600);
+    }
+  });
+  document.getElementById("replay").onclick = function () { window.avokaido.replayIntro(); };
+  document.getElementById("reset").onclick = function () {
+    sessionStorage.removeItem("demo.tour");
+    location.search = "?fresh" + (location.search.indexOf("notour") >= 0 ? "&notour" : "");
+  };
+</script>
+
+<script src="../dist/v1.js"
+        data-key="avk_example-intro"
+        data-origin="https://app-avokaido-eu.web.app"
+        defer></script>
+</body>
+</html>

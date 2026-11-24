@@ -28,6 +28,7 @@
 import { launcherFont, matchTheme, systemTheme, themeOption, withSystem } from "./theme.js";
 import { copyPage, scrubText } from "./copy.js";
 import { createPageHands, flutterState, isPlainPath, settleFor, squash } from "./page.js";
+import { INTRO_CSS, introLang, introSeen, markIntroSeen, runIntro } from "./intro.js";
 
 /** Corners the launcher and the dock may sit in. */
 export const CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"];
@@ -878,6 +879,13 @@ export function createIdeaWidget(options) {
   var REOPEN_KEY = "avokaido.ideas.reopen";
   /** `"icon"` or `"floating"` when the team chose one, else null. */
   var teamLauncher = null;
+  // THE CHAT'S INTRO (intro.js): on unless the link's answer says
+  // `intro: false`. `introState` is null until it has been decided for this
+  // page view, then "running", "done" or "skipped".
+  var introOn = true;
+  var introState = null;
+  var introRun = null;
+  var teardownIntro = false;
   /** This person's own choice, `"icon"` or `"floating"`, or null for none. */
   var personalLauncher = rememberedLauncher();
 
@@ -1222,10 +1230,100 @@ export function createIdeaWidget(options) {
       launcherEl.hidden = !allowed();
     }
     if (allowed()) armPreload();
+    if (decided) maybeIntro();
     if (!decided) return;
     var queued = waiting;
     waiting = [];
     for (var i = 0; i < queued.length; i++) queued[i]();
+  }
+
+  /** Tells the page how the intro went — see intro.js for the three states. */
+  function tellIntro(detail) {
+    try {
+      window.dispatchEvent(new CustomEvent("avokaido:intro", { detail: detail }));
+    } catch (e) {
+      /* A page without CustomEvent has no tour waiting on this either. */
+    }
+  }
+
+  /** The page's get-started tour, when one has registered (onboarding module). */
+  function pageTour() {
+    var a = window.avokaido;
+    return a && a.tour && typeof a.tour.start === "function" ? a.tour : null;
+  }
+
+  /**
+   * THE CHAT'S INTRO, once per page view, when the button is first shown.
+   * Not at all with `launcher: "none"` (nothing to point at), when the team
+   * turned it off, or when this browser or person has seen it — and the page
+   * is told so at once ("skipped"), so a tour waiting on it starts.
+   *
+   * A TOUR TO OFFER is looked for now and for up to a second more: an app's
+   * onboarding mounts with the page, often after this deferred script.
+   */
+  var INTRO_TOUR_WAIT_MS = 1000;
+  function maybeIntro(force) {
+    if (introState !== null && !force) return;
+    var launcherEl = root && root.querySelector(".launcher");
+    if (!force && (!allowed() || !launcherEl)) {
+      if (!decided) return;
+      if (launcher === "none") {
+        // No button of ours to point at: the page's own menu item is it.
+        introState = "skipped";
+        tellIntro({ state: "skipped" });
+      } else if (!allowed()) {
+        // Hidden for this person: `avokaido:visibility` already told a
+        // waiting tour. Decided again if the button is shown later.
+      }
+      return;
+    }
+    if (!launcherEl) return;
+    var who = user && user.id ? String(user.id) : null;
+    if (!force && (!introOn || introSeen(localStorage, who))) {
+      introState = "skipped";
+      tellIntro({ state: "skipped" });
+      return;
+    }
+    if (introRun) introRun.stop();
+    if (!teardownIntro) {
+      teardownIntro = true;
+      teardown.push(function () {
+        if (introRun) introRun.stop();
+        introRun = null;
+      });
+    }
+    introState = "running";
+    tellIntro({ state: "start" });
+    var begin = function () {
+      if (destroyed || introState !== "running") return;
+      var tour = pageTour();
+      introRun = runIntro({
+        root: root,
+        launcher: launcherEl,
+        lang: introLang(document.documentElement.lang, navigator.languages || [navigator.language]),
+        hasTour: Boolean(tour),
+        mark:
+          '<svg viewBox="' + MARK_VIEWBOX + '" aria-hidden="true">' + MARK_SHAPES + "</svg>",
+        onEnd: function (how) {
+          introRun = null;
+          introState = "done";
+          markIntroSeen(localStorage, who);
+          var t = how.tour ? pageTour() : null;
+          tellIntro({ state: "done", tour: Boolean(t) });
+          if (t) t.start();
+        },
+      });
+    };
+    if (pageTour()) return begin();
+    var waited = false;
+    var go = function () {
+      if (waited) return;
+      waited = true;
+      window.removeEventListener("avokaido:tour-ready", go);
+      begin();
+    };
+    window.addEventListener("avokaido:tour-ready", go);
+    setTimeout(go, INTRO_TOUR_WAIT_MS);
   }
 
   function audienceUrl() {
@@ -1320,6 +1418,10 @@ export function createIdeaWidget(options) {
       }
       // THE TEAM'S BUTTON, chosen in Settings: here, before the button is
       // first shown (`settle`), so it is first seen as the team chose it.
+      // THE CHAT'S INTRO, as the team set it (Chat options → Intro). Read
+      // here, before the button is first shown, so an intro that is off is
+      // never started and then taken back. Missing means on.
+      introOn = body.intro !== false;
       var teamShape =
         body.launcher === "icon" || body.launcher === "floating" ? body.launcher : null;
       // A team that chose the pill before AVO-886 gets the avocado too.
@@ -2053,6 +2155,7 @@ export function createIdeaWidget(options) {
          the bottom, over the page rather than instead of it. */
       "  .dock.tucked, .dock.placed.tucked { top: auto !important; height: 176px !important }",
       "}",
+      INTRO_CSS,
       "@media (prefers-reduced-motion: no-preference) {",
       /* The glide into a corner, and the lift when it is picked up. Only
          while settling: during the drag itself it follows the pointer
@@ -4477,6 +4580,9 @@ export function createIdeaWidget(options) {
       button.addEventListener("click", function () {
         // The click that ends a drag is the drop, not a press.
         if (launcherDragged) return;
+        // Pressed during the intro: they have got it — the intro ends as a
+        // skip, and the box opens.
+        if (introRun) introRun.skip();
         // A TOGGLE. The button that opened the box is the obvious way to put
         // it away again, and it is always in the same place — the × is in
         // whichever corner of the box the page's layout left it.
@@ -4485,6 +4591,7 @@ export function createIdeaWidget(options) {
       });
       root.appendChild(button);
       drawLauncher();
+      if (decided) maybeIntro();
     };
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", start);
@@ -4619,6 +4726,14 @@ export function createIdeaWidget(options) {
      */
     setFacts: function (list) {
       facts = readFacts(list);
+    },
+    /**
+     * Shows the chat's intro again — for a Help menu's "show the chat
+     * again". Shown even when seen before, and even when the team turned it
+     * off: somebody asked for it.
+     */
+    replayIntro: function () {
+      if (decided && allowed()) maybeIntro(true);
     },
   };
 }
