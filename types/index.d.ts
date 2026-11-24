@@ -339,6 +339,8 @@ export interface IdeaWidget {
   setFacts(facts: readonly IdeaWidgetFact[] | null): void;
   /** Whether the button would show for this visitor on this page right now. */
   isShown(): boolean;
+  /** Shows the chat's short intro again, e.g. from a Help menu. */
+  replayIntro(): void;
 }
 
 export declare function createIdeaWidget(
@@ -384,6 +386,14 @@ declare global {
       destroyIdeas?: () => void;
       identify?: (user: IdeaWidgetUser | null) => void;
       isShown?: () => boolean;
+      /** Shows the chat's short intro again, e.g. from a Help menu. */
+      replayIntro?: () => void;
+      /**
+       * An app's get-started tour (Avokaido's onboarding module), offered at
+       * the end of the chat's intro. Register it and send
+       * `avokaido:tour-ready` on the window.
+       */
+      tour?: { start: () => void };
       /**
        * What the box may do in your app. Before the script has loaded, a
        * `{ queue: [["set" | "register" | "unregister", arg], …] }` left here
