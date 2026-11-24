@@ -27,7 +27,7 @@
 
 import { launcherFont, matchTheme, systemTheme, themeOption, withSystem } from "./theme.js";
 import { copyPage, scrubText } from "./copy.js";
-import { createPageHands, flutterState, isPlainPath, settleFor, squash } from "./page.js";
+import { createPageHands, flutterState, isPlainPath, pageBusy, settleFor, squash } from "./page.js";
 import { INTRO_CSS, introLang, introSeen, markIntroSeen, runIntro } from "./intro.js";
 
 /** Corners the launcher and the dock may sit in. */
@@ -3598,18 +3598,29 @@ export function createIdeaWidget(options) {
    * `avokaido:read-request` on the document is the ask, which the Dart
    * package answers with the app's `onReadRequest`. It is given a moment;
    * a page still unreadable then is read as such (`UNREADABLE_FLUTTER`).
+   *
+   * A PAGE STILL LOADING IS GIVEN A MOMENT TOO (AVO-1222, `pageBusy`): read
+   * once what it marks busy is gone, or as it is after [BUSY_WAIT_MS]. Both
+   * waits together stay inside the chat's own wait for a reading (four
+   * seconds, `kPageReadWait` in cloud_services' `idea_embed.dart`).
    */
   var READ_WAIT_MS = 1500;
+  var BUSY_WAIT_MS = 2000;
 
   function readSoon() {
     var hands = handsNow();
-    if (flutterState(document) !== "off") return Promise.resolve(hands.read());
-    emit("read-request", { needs: "semantics" });
+    var canvas = flutterState(document) === "off";
+    if (!canvas && !pageBusy(document, host)) return Promise.resolve(hands.read());
+    if (canvas) emit("read-request", { needs: "semantics" });
     return new Promise(function (done) {
       var started = Date.now();
       (function check() {
-        if (flutterState(document) !== "off" || Date.now() - started >= READ_WAIT_MS) {
-          // One frame more: the tree is filled in as it is drawn.
+        var waited = Date.now() - started;
+        var drawing = waited < READ_WAIT_MS && flutterState(document) === "off";
+        var loading = waited < BUSY_WAIT_MS && pageBusy(document, host);
+        if (!drawing && !loading) {
+          // One frame more: the tree is filled in, and the page drawn, as it
+          // is painted.
           setTimeout(function () {
             done(hands.read());
           }, 120);

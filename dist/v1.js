@@ -1,5 +1,5 @@
 /**
- * Avokaido idea widget 1.26.0 — one script tag on your page.
+ * Avokaido idea widget 1.26.1 — one script tag on your page.
  *
  *   <script src="https://app-avokaido-eu.web.app/widget/v1.js"
  *           data-key="avk_YOUR_KEY" defer></script>
@@ -1451,6 +1451,32 @@ function flutterState(doc) {
   if (!doc.querySelector("flutter-view, flt-glass-pane")) return "none";
   var host = doc.querySelector("flt-semantics-host");
   return host && host.querySelector("flt-semantics") ? "readable" : "off";
+}
+
+/**
+ * A PAGE STILL LOADING SAYS SO (AVO-1222). A click that goes to the next
+ * screen of a single-page app often draws a placeholder first and the real
+ * content a moment later. The box read the page 450 ms after a click on a
+ * shop's "All fruit", got the placeholder's hidden "Loading…", and told the
+ * person the fruit was still loading while all twelve were on screen.
+ *
+ * Busy is what the page itself says: something shown with
+ * `aria-busy="true"` (what Next.js' `loading.tsx` and most skeletons carry),
+ * or a progress bar with no value, which is a spinner. A progress bar with a
+ * value is a step counter or an upload, and can stay on the page for good.
+ * Anything inside the widget's own [host] is not the page's.
+ */
+function pageBusy(doc, host) {
+  if (!doc || typeof doc.querySelectorAll !== "function") return false;
+  var marked = doc.querySelectorAll('[aria-busy="true"], [role="progressbar"]:not([aria-valuenow])');
+  for (var i = 0; i < marked.length; i++) {
+    var el = marked[i];
+    if (host && typeof host.contains === "function" && host.contains(el)) continue;
+    // Not drawn: `display: none`, or out of the page.
+    if (typeof el.getClientRects === "function" && el.getClientRects().length === 0) continue;
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -6778,18 +6804,29 @@ function createIdeaWidget(options) {
    * `avokaido:read-request` on the document is the ask, which the Dart
    * package answers with the app's `onReadRequest`. It is given a moment;
    * a page still unreadable then is read as such (`UNREADABLE_FLUTTER`).
+   *
+   * A PAGE STILL LOADING IS GIVEN A MOMENT TOO (AVO-1222, `pageBusy`): read
+   * once what it marks busy is gone, or as it is after [BUSY_WAIT_MS]. Both
+   * waits together stay inside the chat's own wait for a reading (four
+   * seconds, `kPageReadWait` in cloud_services' `idea_embed.dart`).
    */
   var READ_WAIT_MS = 1500;
+  var BUSY_WAIT_MS = 2000;
 
   function readSoon() {
     var hands = handsNow();
-    if (flutterState(document) !== "off") return Promise.resolve(hands.read());
-    emit("read-request", { needs: "semantics" });
+    var canvas = flutterState(document) === "off";
+    if (!canvas && !pageBusy(document, host)) return Promise.resolve(hands.read());
+    if (canvas) emit("read-request", { needs: "semantics" });
     return new Promise(function (done) {
       var started = Date.now();
       (function check() {
-        if (flutterState(document) !== "off" || Date.now() - started >= READ_WAIT_MS) {
-          // One frame more: the tree is filled in as it is drawn.
+        var waited = Date.now() - started;
+        var drawing = waited < READ_WAIT_MS && flutterState(document) === "off";
+        var loading = waited < BUSY_WAIT_MS && pageBusy(document, host);
+        if (!drawing && !loading) {
+          // One frame more: the tree is filled in, and the page drawn, as it
+          // is painted.
           setTimeout(function () {
             done(hands.read());
           }, 120);
