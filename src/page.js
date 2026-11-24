@@ -95,6 +95,32 @@ export function flutterState(doc) {
 }
 
 /**
+ * A PAGE STILL LOADING SAYS SO (AVO-1222). A click that goes to the next
+ * screen of a single-page app often draws a placeholder first and the real
+ * content a moment later. The box read the page 450 ms after a click on a
+ * shop's "All fruit", got the placeholder's hidden "Loading…", and told the
+ * person the fruit was still loading while all twelve were on screen.
+ *
+ * Busy is what the page itself says: something shown with
+ * `aria-busy="true"` (what Next.js' `loading.tsx` and most skeletons carry),
+ * or a progress bar with no value, which is a spinner. A progress bar with a
+ * value is a step counter or an upload, and can stay on the page for good.
+ * Anything inside the widget's own [host] is not the page's.
+ */
+export function pageBusy(doc, host) {
+  if (!doc || typeof doc.querySelectorAll !== "function") return false;
+  var marked = doc.querySelectorAll('[aria-busy="true"], [role="progressbar"]:not([aria-valuenow])');
+  for (var i = 0; i < marked.length; i++) {
+    var el = marked[i];
+    if (host && typeof host.contains === "function" && host.contains(el)) continue;
+    // Not drawn: `display: none`, or out of the page.
+    if (typeof el.getClientRects === "function" && el.getClientRects().length === 0) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
  * WHEN AND WHERE THE PERSON IS ASKING: "today at 10" means their today, in
  * their time zone — `now: Thursday 12 November 2026, 10:02 (Europe/Stockholm,
  * UTC+01:00)`. The server matches the `now:` prefix.

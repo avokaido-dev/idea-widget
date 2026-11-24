@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.26.1
+
+**A page still loading is read once it has loaded.** A click that goes to the
+next screen of a single-page app often draws a placeholder first. The box read
+the page 450 ms after the click, got the placeholder's "Loading…", and said the
+page was still loading while everything was on screen. Before every reading, a
+step's and the chat's own, the widget now waits while the page shows something
+marked busy (`aria-busy="true"`, or a progress bar with no value), for two
+seconds at most, then reads it.
+
 ## 1.26.0
 
 **The chat introduces itself.** The first time somebody sees the button, the

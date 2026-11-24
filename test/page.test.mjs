@@ -23,6 +23,7 @@ import {
   UNREADABLE_FLUTTER,
   flutterState,
   nowLine,
+  pageBusy,
   refind,
   setFieldValue,
   settleFor,
@@ -670,8 +671,51 @@ describe("a Flutter page", () => {
   });
 
   it("is asked to switch accessibility on before it is read, and given a moment", () => {
-    assert.match(core, /if \(flutterState\(document\) !== "off"\) return Promise\.resolve\(hands\.read\(\)\);\n\s+emit\("read-request", \{ needs: "semantics" \}\);/);
+    assert.match(core, /var canvas = flutterState\(document\) === "off";\n\s+if \(!canvas && !pageBusy\(document, host\)\) return Promise\.resolve\(hands\.read\(\)\);\n\s+if \(canvas\) emit\("read-request", \{ needs: "semantics" \}\);/);
     assert.match(core, /var READ_WAIT_MS = 1500;/);
+  });
+});
+
+// ─── A page still loading ───────────────────────────────────────────────────
+
+describe("a page still loading (AVO-1222)", () => {
+  // What `querySelectorAll` would find for the busy selector, each one shown
+  // or not, and inside the widget or not.
+  const el = ({ shown = true, ours = false } = {}) => ({ ours, getClientRects: () => (shown ? [{}] : []) });
+  const doc = (found) => ({
+    querySelectorAll(sel) {
+      assert.equal(sel, '[aria-busy="true"], [role="progressbar"]:not([aria-valuenow])');
+      return found;
+    },
+  });
+  const host = { contains: (node) => node.ours === true };
+
+  it("is busy while something it shows is marked busy, or spins", () => {
+    assert.equal(pageBusy(doc([el()]), host), true);
+  });
+
+  it("is not busy once the placeholder is gone, or when it is not drawn", () => {
+    assert.equal(pageBusy(doc([]), host), false);
+    assert.equal(pageBusy(doc([el({ shown: false })]), host), false);
+  });
+
+  it("is not made busy by the widget's own parts", () => {
+    assert.equal(pageBusy(doc([el({ ours: true })]), host), false);
+    assert.equal(pageBusy(doc([el({ ours: true }), el()]), host), true);
+  });
+
+  it("is not busy on a page that cannot be asked", () => {
+    assert.equal(pageBusy(null, host), false);
+    assert.equal(pageBusy({}, host), false);
+    assert.equal(pageBusy(doc([el()]), null), true);
+  });
+
+  it("is waited for before every reading, a step's and the chat's own, for two seconds at most", () => {
+    assert.match(core, /var BUSY_WAIT_MS = 2000;/);
+    assert.match(core, /var loading = waited < BUSY_WAIT_MS && pageBusy\(document, host\);/);
+    // A step's answer and a reading the chat asks for both read through it.
+    assert.match(core, /readSoon\(\)\.then\(\n\s+function \(page\) \{\n\s+message\.page = page;/);
+    assert.match(core, /readSoon\(\)\.then\(\n\s+function \(page\) \{\n\s+postToFrame\(\{ type: "avokaido:page"/);
   });
 });
 
