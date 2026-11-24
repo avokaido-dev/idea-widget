@@ -1262,6 +1262,22 @@ export function createIdeaWidget(options) {
    * onboarding mounts with the page, often after this deferred script.
    */
   var INTRO_TOUR_WAIT_MS = 1000;
+  var INTRO_MODAL_POLL_MS = 800;
+
+  /** Whether the page has a modal dialog of its own open — not ours, which
+   *  lives in our shadow root and is not found from the document. */
+  function pageModalOpen() {
+    try {
+      var found = document.querySelectorAll('[role="dialog"][aria-modal="true"], dialog[open]');
+      for (var i = 0; i < found.length; i++) {
+        var r = found[i].getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) return true;
+      }
+    } catch (e) {
+      /* An odd document: nothing found is nothing in the way. */
+    }
+    return false;
+  }
   function maybeIntro(force) {
     if (introState !== null && !force) return;
     var launcherEl = root && root.querySelector(".launcher");
@@ -1314,13 +1330,21 @@ export function createIdeaWidget(options) {
         },
       });
     };
-    if (pageTour()) return begin();
+    // NEVER ON TOP OF THE PAGE'S OWN MODAL: an app built before the tour
+    // waited for this (an older onboarding module) opens its tour by itself,
+    // and any app may have a dialog up. The intro waits until none is open.
+    var whenClear = function () {
+      if (destroyed || introState !== "running") return;
+      if (!pageModalOpen()) return begin();
+      setTimeout(whenClear, INTRO_MODAL_POLL_MS);
+    };
+    if (pageTour()) return whenClear();
     var waited = false;
     var go = function () {
       if (waited) return;
       waited = true;
       window.removeEventListener("avokaido:tour-ready", go);
-      begin();
+      whenClear();
     };
     window.addEventListener("avokaido:tour-ready", go);
     setTimeout(go, INTRO_TOUR_WAIT_MS);

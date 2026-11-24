@@ -100,11 +100,11 @@
       <div class="card"><h3>Saker att tänka på</h3><p>Packning och krockar.</p></div>
     </div>
     <p class="note">Demo: <code>?fresh</code> as a new visitor · <code>?intro=off</code> as a team that turned it off ·
-      <code>?notour</code> on a site without a tour. Events: <span id="log">–</span></p>
+      <code>?notour</code> on a site without a tour · <code>?oldtour</code> an app with an older tour. Events: <span id="log">–</span></p>
   </main>
 </div>
 
-<div class="tour" id="tour" role="dialog" aria-label="Guidad tur">
+<div class="tour" id="tour" role="dialog" aria-modal="true" aria-label="Guidad tur">
   <div class="box">
     <small>Steg 1 av 11</small>
     <h2>Välkommen!</h2>
@@ -121,7 +121,11 @@
   document.getElementById("tourSkip").onclick = document.getElementById("tourNext").onclick = function () {
     tourEl.classList.remove("on");
   };
-  if (!new URLSearchParams(location.search).has("notour")) {
+  var q = new URLSearchParams(location.search);
+  // `?oldtour`: an app built before the tour waited for the intro — its tour
+  // opens by itself, and the intro must wait until it is closed.
+  if (q.has("oldtour")) setTimeout(startTour, 600);
+  else if (!q.has("notour")) {
     window.avokaido = window.avokaido || {};
     window.avokaido.tour = { start: startTour };
     window.dispatchEvent(new CustomEvent("avokaido:tour-ready"));

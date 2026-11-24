@@ -137,5 +137,7 @@ describe("in the built file", () => {
     assert.match(dist, /window\.avokaido\.replayIntro = widget\.replayIntro/);
     assert.match(dist, /"avokaido:intro"/);
     assert.doesNotMatch(dist, /from "\.\/intro\.js"/);
+    // Never on top of the page's own modal (an older onboarding tour).
+    assert.match(dist, /function pageModalOpen\(/);
   });
 });
