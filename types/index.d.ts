@@ -426,6 +426,12 @@ declare global {
      */
     "avokaido:pending": CustomEvent<{ state: "ready" | "waiting" | null }>;
     /**
+     * "See it now" pressed under a build that went live. Cancelable: call
+     * `preventDefault()` and the widget does not reload the page, which it
+     * otherwise does once the site serves `buildId` (within 15 s).
+     */
+    "avokaido:reload": CustomEvent<{ buildId: string | null }>;
+    /**
      * After every action the box asked for: which, with what, and whether it
      * was done (`false` when it failed, or was refused before running).
      */

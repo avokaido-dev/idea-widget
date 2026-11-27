@@ -575,6 +575,19 @@ still a submission, and the number you are counting should not change shape
 depending on who sent it.
 
 
+### Seeing a new build
+
+When something the box built goes live, its **See it now** button reloads the
+page once your site serves the new build, so nobody sees the old one again or
+has to clear their cache. An app that would rather show it its own way:
+
+```js
+document.addEventListener("avokaido:reload", (event) => {
+  event.preventDefault();            // the widget won't reload
+  // event.detail.buildId: the build that went live, or null
+});
+```
+
 ### Taking people to a page
 
 When the box answers a question about your app ("where are receipts?"), it can offer the page as a button. Pressed, the widget sends the page there itself, with a normal navigation, and opens the box again on the page it lands on. An app that routes itself can do it without a reload:
@@ -1038,6 +1051,7 @@ From the chat to the widget:
 | `avokaido:pick` | `id` | Point and ask: the next click on the page is taken, not passed on, and answered with `avokaido:picked`. |
 | `avokaido:unpick` | — | Stops picking, answered `picked { cancelled }`. |
 | `avokaido:navigate` | `id`, `path` | A button under an answer to a question about the app, pressed. Only a plain path on this site: answers `avokaido:navigated`, then emits a cancelable `avokaido:navigate` on the page, and goes there itself unless the page called `preventDefault()` — opening the box again on the page it lands on. |
+| `avokaido:reload` | `buildId?` | **See it now** under a build that went live. Emits a cancelable `avokaido:reload` on the page (`detail.buildId`) and stops there if the page called `preventDefault()`. Otherwise answers `avokaido:reloading`, then asks this page's own address with `HEAD` (`cache: "no-store"`, same-origin) once a second until its `X-Avo-Build` header is `buildId`, and reloads — at once without a `buildId` or when a request fails, and after 15 s whatever the header says. A second `reload` while one waits is ignored. |
 
 From the widget to the chat:
 
@@ -1051,6 +1065,7 @@ From the widget to the chat:
 | `avokaido:closed` | — | Put away and kept. |
 | `avokaido:visitor` | `token` | On open, when the host app gave `getIdToken`. |
 | `avokaido:navigated` | `id` | Right after an `avokaido:navigate` it took: the chat then does not move the page itself. |
+| `avokaido:reloading` | — | Right after an `avokaido:reload` the page did not cancel: it reloads once the new build is served, within 15 s. |
 | `avokaido:acted` | `id`, `ok`, `message` | After every `avokaido:action`, with its `id`: whether it was done, and what to tell the person (up to 300 characters, `""` for nothing). An unknown `actionId` is `ok: false`, `"No such action"`; a missing required param `"Missing <name>"`; a throw or rejection its message. |
 | `avokaido:theme` | `vars`, `matched`, `from: "page" \| "repo" \| "avo"`, `src`, `full` | On `ready` and before every `open`. `vars` are the `--w-*` and `--p-*` CSS variables to apply; `src` says, per role, `{ tag, text }` where it came from; `full` as in `layout`. |
 | `avokaido:layout` | `full: boolean` | On `ready`, before every `open`, and whenever the window crosses into or out of full screen (under 561 px wide or 441 px tall), where the chat hides its resize arc and corners. |

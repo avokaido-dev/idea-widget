@@ -840,6 +840,94 @@ export function runFact(facts, factId, rawArgs) {
   });
 }
 
+/** How often the page asks whether the new build is served yet. */
+export var RELOAD_EVERY_MS = 1000;
+/** The longest it waits for the new build before it reloads anyway. */
+export var RELOAD_WITHIN_MS = 15000;
+
+/**
+ * "SEE IT NOW", PRESSED: reloads the page once the site serves the build the
+ * chat just watched go live.
+ *
+ * A build is live before every edge serves it, and a reload a moment too
+ * early draws the old site again — which is how people ended up clearing
+ * their cache. So the page asks its own address, with `HEAD` and past every
+ * cache, which build it is served (the `X-Avo-Build` header the Avokaido
+ * router sets), once a second, and reloads when that is `buildId`. It never
+ * waits longer than [RELOAD_WITHIN_MS]: a header that does not arrive, or
+ * names another build all the while, still ends in the reload asked for.
+ * Without a `buildId` there is nothing to wait for, and a request that fails
+ * says nothing more by being asked again; both reload at once.
+ *
+ * The app gets the first word, as for `avokaido:navigate`: `announce` is a
+ * cancelable `avokaido:reload` on the page, and one cancelled ends there —
+ * the app reloads itself, or shows the new build its own way. Otherwise the
+ * chat is told (`avokaido:reloading`), and a second press while it waits
+ * changes nothing.
+ *
+ * `deps`: `announce(detail)` → false when cancelled; `tell(message)` to the
+ * chat; `served()` → a promise of the `X-Avo-Build` served now, or null;
+ * `reload()`; `setTimeout` / `clearTimeout`. Returns `take(data)` for each
+ * `avokaido:reload` from the chat, and `take.cancel()` for teardown.
+ *
+ * EXPORTED FOR ITS TESTS AND FOR NOTHING ELSE.
+ */
+export function makeReloader(deps) {
+  var waiting = false;
+  var done = false;
+  var poll = null;
+  var deadline = null;
+
+  function stop() {
+    done = true;
+    if (poll) deps.clearTimeout(poll);
+    if (deadline) deps.clearTimeout(deadline);
+    poll = deadline = null;
+  }
+
+  function finish() {
+    if (done) return;
+    stop();
+    deps.reload();
+  }
+
+  function ask(buildId) {
+    poll = null;
+    var answer;
+    try {
+      answer = Promise.resolve(deps.served());
+    } catch (e) {
+      answer = Promise.reject(e);
+    }
+    answer.then(
+      function (served) {
+        if (done) return;
+        if (served === buildId) return finish();
+        poll = deps.setTimeout(function () {
+          ask(buildId);
+        }, RELOAD_EVERY_MS);
+      },
+      function () {
+        finish();
+      },
+    );
+  }
+
+  function take(data) {
+    if (waiting) return;
+    var buildId = data && typeof data.buildId === "string" ? data.buildId : "";
+    if (!deps.announce({ buildId: buildId || null })) return;
+    waiting = true;
+    deps.tell({ type: "avokaido:reloading" });
+    if (!buildId) return finish();
+    deadline = deps.setTimeout(finish, RELOAD_WITHIN_MS);
+    ask(buildId);
+  }
+
+  take.cancel = stop;
+  return take;
+}
+
 export function createIdeaWidget(options) {
   var opts = options || {};
 
@@ -3492,16 +3580,57 @@ export function createIdeaWidget(options) {
     }
   }
 
-  function emit(name, detail) {
+  /**
+   * Fires `avokaido:<name>` on the document. Returns false only when the
+   * event was [cancelable] and the page called `preventDefault()`.
+   */
+  function emit(name, detail, cancelable) {
     try {
-      document.dispatchEvent(
-        new CustomEvent("avokaido:" + name, { detail: detail || {} })
+      return document.dispatchEvent(
+        new CustomEvent("avokaido:" + name, {
+          detail: detail || {},
+          cancelable: cancelable === true,
+        })
       );
     } catch (e) {
       /* A host page with a broken CustomEvent polyfill is not our problem to
          crash over — the widget still works without the notification. */
+      return true;
     }
   }
+
+  /**
+   * "See it now" under a build that went live: `avokaido:reload` from the
+   * chat. See [makeReloader]; the build served now is read from this page's
+   * own address, same origin, so the header is readable without CORS.
+   */
+  var reloadFor = makeReloader({
+    announce: function (detail) {
+      return emit("reload", detail, true);
+    },
+    tell: function (message) {
+      postToFrame(message);
+    },
+    served: function () {
+      return fetch(location.href, {
+        method: "HEAD",
+        cache: "no-store",
+        credentials: "same-origin",
+      }).then(function (response) {
+        return response.headers.get("X-Avo-Build");
+      });
+    },
+    reload: function () {
+      location.reload();
+    },
+    setTimeout: function (fn, ms) {
+      return setTimeout(fn, ms);
+    },
+    clearTimeout: function (t) {
+      clearTimeout(t);
+    },
+  });
+  teardown.push(reloadFor.cancel);
 
   /**
    * A BUTTON UNDER AN ANSWER, PRESSED: take this page to `path`.
@@ -4220,6 +4349,8 @@ export function createIdeaWidget(options) {
       }, 2200);
     } else if (type === "avokaido:navigate") {
       navigateFor(event.data);
+    } else if (type === "avokaido:reload") {
+      reloadFor(event.data);
     } else if (type === "avokaido:action") {
       actFor(event.data);
     } else if (type === "avokaido:read") {
