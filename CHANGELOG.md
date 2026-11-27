@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.27.0
+
+**"See it now" shows the new build.** When something built from the box went
+live, the chat only said "reload the page to see it", and a reload a moment
+too early drew the old site again — people cleared their cache to get past it.
+The chat's **See it now** now sends `avokaido:reload` (`{ buildId }`), and the
+widget reloads the page once the site serves that build: it asks the page's
+own address with `HEAD`, past every cache, once a second until the
+`X-Avo-Build` header the Avokaido router sets names it, and reloads then —
+at once without a `buildId` or when a request fails, and after 15 seconds
+whatever the header says. The page hears a cancelable `avokaido:reload` first
+(`detail.buildId`); one that calls `preventDefault()` keeps the page as it is.
+The chat is told `avokaido:reloading`. A second press while it waits is
+ignored.
+
 ## 1.26.1
 
 **A page still loading is read once it has loaded.** A click that goes to the
